@@ -3,30 +3,27 @@ on:
   pull_request:
     paths:
       - 'src/**'
-
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: [actions/checkout](https://github.com)@v4
+        uses: actions/checkout@v4
 
       - name: Install uv
-        uses: [astral-sh/setup-uv](https://github.com/astral-sh/setup-uv)@v5
+        uses: astral-sh/setup-uv@v7
         with:
-          # Automatically enables caching for faster subsequent runs
           enable-cache: true
 
       - name: Set up Python
-        # uv can manage the Python version directly
+        # uv installs the version if not already present
         run: uv python install 3.9.6
 
       - name: Install dependencies
-        # Syncs your environment based on uv.lock and pyproject.toml
+        # Syncs environment based on uv.lock and pyproject.toml
         run: uv sync --all-groups
 
       - name: Run Mypy
-        # Use 'uv run' to execute tools within the project's virtual environment
         run: uv run mypy src
 
       - name: Run Pylint
