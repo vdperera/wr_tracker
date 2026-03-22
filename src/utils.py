@@ -52,7 +52,7 @@ def generate_sigle_affinity_match():
     return new_match
 
 
-def toggle_emoji(button1, button2) -> None:
+def toggle_emoji(button1, button2) -> str:
     """
     Toggle a pair of emoji. When clicking on a grayed out, remove the greyscale filter from the
     emoji clicked and add it to the other emoji in the pair
