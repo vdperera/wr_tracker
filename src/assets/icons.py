@@ -1,5 +1,5 @@
 """
-A collection of svg icons
+A collection of svg icons.
 """
 
 play_icon: str = """
