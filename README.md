@@ -10,4 +10,4 @@ From the root directory of the project:
 
 3. Activate the virtual environment: `source .venv/bin/activate`
 
-4. Run the script: `cd src && python main_ui.py`
+4. Run the main script: `cd src && python main_ui.py`
