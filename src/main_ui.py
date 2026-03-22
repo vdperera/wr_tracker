@@ -85,19 +85,19 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
 
     def __init__(self):
         super().__init__()
-        with self, ui.card().classes("p-12"):
-            with ui.row().classes("absolute top-2 right-2 items-center gap-2"):
+        with self, ui.card().classes("p-0"):
+            with ui.row().classes("items-center justify-end w-full"):
                 ui.button(icon="close", on_click=self.close_and_reset).props(
                     "flat round dense"
                 )
-            with ui.row().classes("w-full items-center justify-between"):
+            with ui.row().classes("w-full items-center justify-between px-8 -mt-4"):
                 ui.label("Enter Result").classes("text-h6")
-            with ui.row():
+            with ui.row().classes("px-8"):
                 self.archetype_input = ui.input(
                     label="Archetype", autocomplete=autocomplete_options
                 )
 
-            with ui.grid(columns=4).classes("items-center justify-items-center"):
+            with ui.grid(columns=4).classes("items-center justify-items-center px-8"):
 
                 # Row 1 - just the 'on the play' icon and 3 placeholders
                 ui.label("")
@@ -153,7 +153,15 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
                 ui.button("Record", on_click=self.record)
 
             ui.label("")
-            with ui.row().classes("absolute bottom-2 right-2 items-center gap-2"):
+            # with (
+            #     ui.row()
+            #     .classes("absolute bottom-2 right-2 items-center gap-2")
+            #     .style("z-index: 10")
+            # ):
+            # with ui.card_actions().classes("justify-end q-pa-none gap-2"):
+            # with ui.card_actions().classes("w-full justify-end q-pa-none mt-auto"):
+            # with ui.row().classes("w-full justify-end items-center gap-1"):
+            with ui.row().classes("justify-end items-center gap-2 w-full"):
                 ui.label("Match loss")
                 self.match_loss_cb = ui.checkbox()
 
@@ -295,18 +303,35 @@ def generate_wr_table() -> None:
             "name": "win_rate",
             "label": "Match Win Rate",
             "field": "win_rate",
+            "align": "center",
+            "sortable": True,
+        },
+        {
+            "name": "total_matches",
+            "label": "Total Matches",
+            "field": "total_matches",
+            "align": "center",
             "sortable": True,
         },
     ]
     rows: list[dict[str, Any]] = [
-        {"archetype": key, "win_rate": value.win_rate()} for key, value in data.items()
+        {
+            "archetype": key,
+            "win_rate": f"{value.win_rate():.3f}",
+            "total_matches": value.total,
+        }
+        for key, value in data.items()
     ]
     ui.table(columns=columns, rows=rows, row_key="name")
 
 
-generate_wr_table()
+with ui.column():
+    generate_wr_table()
+    new_match_dialog = NewMatchDialog()
+    ui.button("New Match", on_click=new_match_dialog.open).classes("self-end")
 
-new_match_dialog = NewMatchDialog()
-ui.button("New Match", on_click=new_match_dialog.open)
+
+with ui.footer(value=True).classes("py-1 bg-gray-800 text-white justify-center"):
+    ui.label("© 2026 Vittorio Perera").classes("text-xs")
 
 ui.run(title="Win Rate Tracker", favicon=tab_icon2)
