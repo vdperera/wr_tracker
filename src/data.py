@@ -3,9 +3,11 @@ Defines dataclasses used to record games, matches and events results
 """
 
 from __future__ import annotations
+
 import weakref
 from dataclasses import dataclass, field
 from typing import Optional
+
 from mashumaro.mixins.json import DataClassJSONMixin
 
 
