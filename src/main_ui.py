@@ -326,10 +326,11 @@ if __name__ in {"__main__", "__mp_main__"}:
 
     # create a session and run the UI
     with Session(engine) as session:
-        generate_wr_table(session)
+        with ui.column():
+            generate_wr_table(session)
 
-        new_match_dialog = NewMatchDialog(session)
-        ui.button("New Match", on_click=new_match_dialog.open)
+            new_match_dialog = NewMatchDialog(session)
+            ui.button("New Match", on_click=new_match_dialog.open).classes("self-end")
 
         with ui.footer(value=True).classes(
             "py-1 bg-gray-800 text-white justify-center"
