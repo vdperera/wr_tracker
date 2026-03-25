@@ -5,10 +5,11 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
-    "mashumaro>=3.20",
     "mypy>=1.19.1",
     "nicegui>=3.6.1",
     "pylint>=3.3.9",
     "sphinx>=7.4.7",
     "sphinx-rtd-theme>=3.1.0",
+    "sqlalchemy>=2.0.48",
+    "sqlmodel>=0.0.34",
 ]

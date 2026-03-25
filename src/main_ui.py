@@ -4,42 +4,27 @@ to insert new data.
 """
 
 # pylint: disable=protected-access
-# we need to access the ._classes attribute of many elements either to check their state or to
+# we need to access the ._classes attribute of many UI elements either to check their state or to
 # change their values
 
-import json
 from datetime import datetime
-from enum import Enum
-from typing import Any, List
+from typing import Any
 
-from mashumaro.codecs.json import JSONDecoder, JSONEncoder
 from nicegui import ui
+from sqlalchemy.engine.base import Engine
+from sqlalchemy.orm import selectinload
+from sqlmodel import Session, create_engine, select
 
 from src.assets.icons import play_icon, tab_icon2
-from src.data import Game, Match, MatchUp
-from src.utils import toggle_emoji
-
-encoder = JSONEncoder(List[Match])
-decoder = JSONDecoder(List[Match])
-
-try:
-    with open("results.json", "r", encoding="utf-8") as in_file:
-        match_data = in_file.read()
-        ALL_MATCHES = decoder.decode(match_data)
-except (FileNotFoundError, json.JSONDecodeError) as e:
-    ALL_MATCHES = []
-
-autocomplete_options = list({match.archetype.lower() for match in ALL_MATCHES})
+from src.data import Event, Game, GameResult, Match
+from src.utils import get_archetypes, get_wins, toggle_emoji
 
 
-class GameResult(Enum):
+def init_db(db_engine: Engine):
     """
-    Enum for game state
+    Initialize the DB
     """
-
-    WIN = 1
-    LOSS = -1
-    UNSET = 0
+    Event.metadata.create_all(db_engine)
 
 
 class GameResultButtonPair:
@@ -83,8 +68,9 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
     elements of the ui
     """
 
-    def __init__(self):
+    def __init__(self, db_session):
         super().__init__()
+        self.db_session = db_session
         with self, ui.card().classes("p-0"):
             with ui.row().classes("items-center justify-end w-full"):
                 ui.button(icon="close", on_click=self.close_and_reset).props(
@@ -94,7 +80,7 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
                 ui.label("Enter Result").classes("text-h6")
             with ui.row().classes("px-8"):
                 self.archetype_input = ui.input(
-                    label="Archetype", autocomplete=autocomplete_options
+                    label="Archetype", autocomplete=get_archetypes(db_session)
                 )
 
             with ui.grid(columns=4).classes("items-center justify-items-center px-8"):
@@ -216,30 +202,26 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
             return
 
         g1 = GameResultButtonPair(self.g1_win, self.g1_loss)
+        new_g1 = Game(on_the_play=self.checkbox1.value, win=g1.result.value == 1)
+
         g2 = GameResultButtonPair(self.g2_win, self.g2_loss)
+        new_g2 = Game(on_the_play=self.checkbox2.value, win=g2.result.value == 1)
+
         g3 = GameResultButtonPair(self.g3_win, self.g3_loss)
+        new_g3 = Game(on_the_play=self.checkbox2.value, win=g3.result.value == 1)
 
         new_match = Match(
-            self.archetype_input.value.lower(),
-            datetime.now().isoformat(),
-            self.match_loss_cb.value,
-            [],
+            archetype=self.archetype_input.value.lower(),
+            date=datetime.now().isoformat(),
+            is_match_loss=self.match_loss_cb.value,
+            games=[new_g1, new_g2, new_g3],
         )
-        for game_result, on_the_play in [
-            (g1, self.checkbox1.value),
-            (g2, self.checkbox2.value),
-            (g3, self.checkbox3.value),
-        ]:
-            if game_result.is_set:
-                new_match.add_game(Game(on_the_play, game_result.result.value == 1))
 
-        ALL_MATCHES.append(new_match)
-        global autocomplete_options  # pylint:disable=global-statement
-        autocomplete_options = list({match.archetype.lower() for match in ALL_MATCHES})
+        self.db_session.add(new_match)
+        self.db_session.commit()
+
+        self.archetype_input.set_autocomplete(get_archetypes(self.db_session))
         generate_wr_table.refresh()
-
-        with open("results.json", "w", encoding="utf-8") as out_file:
-            out_file.write(encoder.encode(ALL_MATCHES))
 
         # dump data
         self.reset_dialog()
@@ -277,19 +259,13 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
 
 
 @ui.refreshable
-def generate_wr_table() -> None:
+def generate_wr_table(db_session) -> None:
     """
     Draws the win rate table starting from the raw data
     """
 
-    data: dict[str, MatchUp] = {}
-    for match in ALL_MATCHES:
-        if match.archetype not in data:
-            match_up = MatchUp(match.archetype)
-            data[match.archetype] = match_up
-        if match.archetype == "Boros":
-            print(match)
-        data[match.archetype].update(match)
+    # Prepare the rows and column lists
+    rows: list[dict[str, Any]] = []
     columns = [
         {
             "name": "archetype",
@@ -314,24 +290,50 @@ def generate_wr_table() -> None:
             "sortable": True,
         },
     ]
-    rows: list[dict[str, Any]] = [
-        {
-            "archetype": key,
-            "win_rate": f"{value.win_rate():.3f}",
-            "total_matches": value.total,
-        }
-        for key, value in data.items()
-    ]
+
+    # Get all the archetypes from autocomplete
+    autocomplete_options = get_archetypes(db_session)
+
+    # For each matchup get win rate and total matches
+    for archetype in autocomplete_options:
+        statement = (
+            select(Match)
+            .where(Match.archetype == archetype)
+            .options(selectinload(Match.games))  # type: ignore
+        )
+
+        match_up = db_session.exec(statement).unique().all()
+        total = len(match_up)
+        wins = get_wins(match_up)
+
+        # Add the values to rows
+        rows.append(
+            {
+                "archetype": archetype,
+                "win_rate": f"{(wins / total):.3f}",
+                "total_matches": total,
+            }
+        )
+
+    # Add the table element to the UI
     ui.table(columns=columns, rows=rows, row_key="name")
 
 
-with ui.column():
-    generate_wr_table()
-    new_match_dialog = NewMatchDialog()
-    ui.button("New Match", on_click=new_match_dialog.open).classes("self-end")
+if __name__ in {"__main__", "__mp_main__"}:
 
+    engine = create_engine("sqlite:///matches.db")
+    init_db(engine)
 
-with ui.footer(value=True).classes("py-1 bg-gray-800 text-white justify-center"):
-    ui.label("© 2026 Vittorio Perera").classes("text-xs")
+    # create a session and run the UI
+    with Session(engine) as session:
+        generate_wr_table(session)
 
-ui.run(title="Win Rate Tracker", favicon=tab_icon2)
+        new_match_dialog = NewMatchDialog(session)
+        ui.button("New Match", on_click=new_match_dialog.open)
+
+        with ui.footer(value=True).classes(
+            "py-1 bg-gray-800 text-white justify-center"
+        ):
+            ui.label("© 2026 Vittorio Perera").classes("text-xs")
+
+        ui.run(title="Win Rate Tracker", favicon=tab_icon2)

@@ -4,52 +4,44 @@ Utility function for the main ui
 
 from datetime import datetime
 from random import choice
-from typing import List
+from typing import Sequence
 
-from src.data import Game, Match
+from sqlalchemy.engine.base import Engine
+from sqlmodel import Session, select
 
-match_results = [[1, 1], [1, 0, 1], [0, 1, 1], [0, 0], [0, 1, 0], [1, 0, 0]]
-decks = ["boros", "jeskay blink", "esper Blink", "titan"]
+from src.data import Event, Game, Match
 
 
-def generate_data(total: int) -> List[Match]:
+def generate_data(engine: Engine, events: int, matches_per_event: int) -> None:
     """
-    Generate some random data (i.e., match results) for testing
-    """
-
-    all_matches = []
-    for _ in range(total):
-        deck = choice(decks)
-
-        new_match = Match(deck, datetime.now().isoformat(), False, [])
-        result = choice(match_results)
-        play = choice([True, False])
-
-        for elem in result:
-            new_match.add_game(Game(play, bool(elem)))
-            if elem:
-                play = False
-            else:
-                play = True
-        all_matches.append(new_match)
-    return all_matches
-
-
-def generate_sigle_affinity_match():
-    """
-    Generate a single match with a specific archetype name (affiity)
+    Generate some random data (i.e., match results) for testing.
     """
 
-    new_match = Match("Affinity", datetime.now().isoformat(), [])
-    result = choice(match_results)
-    play = choice([True, False])
-    for elem in result:
-        new_match.add_game(Game(play, bool(elem)))
-        if elem:
-            play = False
-        else:
-            play = True
-    return new_match
+    match_results = [[1, 1], [1, 0, 1], [0, 1, 1], [0, 0], [0, 1, 0], [1, 0, 0]]
+    decks = ["boros", "jeskay blink", "esper Blink", "titan"]
+
+    with Session(engine) as session:
+        for i in range(events):
+            matches = []
+            for _ in range(matches_per_event):
+                deck = choice(decks)
+                result = choice(match_results)
+                games = []
+                for elem in result:
+                    games.append(
+                        Game(on_the_play=choice([True, False]), win=bool(elem))
+                    )
+                matches.append(
+                    Match(
+                        archetype=deck,
+                        date=datetime.now().isoformat(),
+                        is_match_loss=False,
+                        games=games,
+                    )
+                )
+            event = Event(name=f"League_{i+1}", event_type="MTGO", matches=matches)
+            session.add(event)
+        session.commit()
 
 
 def toggle_emoji(button1, button2) -> None:
@@ -71,3 +63,37 @@ def toggle_emoji(button1, button2) -> None:
 
     if not button1_grayed and button2_grayed:
         button1.classes("grayscale opacity-50")
+
+
+def is_match_won(match: Match) -> bool:
+    """
+    Check if a Match was won
+    """
+    if match.is_match_loss:
+        return False
+    total = 0
+    for game in match.games:
+        if game.win:
+            total += 1
+        else:
+            total -= 1
+
+    return total > 0
+
+
+def get_wins(matches: Sequence[Match]) -> int:
+    """
+    Return how many, out of a sequence of Matches, were won
+    """
+
+    return len([m for m in matches if is_match_won(m)])
+
+
+def get_archetypes(session) -> Sequence[str]:
+    """
+    Query the DB for all the archetypes for which a match was recorded
+    """
+
+    statement = select(Match.archetype).distinct()
+    autocomplete_options = session.exec(statement).all()
+    return autocomplete_options
