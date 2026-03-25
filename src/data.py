@@ -1,101 +1,57 @@
 """
-Defines dataclasses used to record games, matches and events results
+Define the DB model
 """
 
-from __future__ import annotations
+from enum import Enum
+from typing import List, Optional
 
-import weakref
-from dataclasses import dataclass, field
-from typing import Optional
-
-from mashumaro.mixins.json import DataClassJSONMixin
+from sqlalchemy.ext.hybrid import hybrid_property
+from sqlmodel import Field, Relationship, SQLModel
 
 
-@dataclass
-class Game(DataClassJSONMixin):
+class Event(SQLModel, table=True):
     """
-    A single game in a Match.
+    An event (e.g., a league, a challenge or an RCQ)
     """
 
-    play: bool
-    win: bool
-    parent_match_ref: Optional[weakref.ReferenceType[Match]] = field(
-        default=None,
-        repr=False,
-        init=False,
-        metadata={"serialize": "omit", "deserialize": "omit"},
-    )
-
-    @property
-    def parent_match(self) -> Optional[Match]:
-        """docstring"""
-        return self.parent_match_ref() if self.parent_match_ref else None
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    event_type: str  # Use your Enum here
+    matches: List["Match"] = Relationship(back_populates="event")
 
 
-@dataclass
-class Match(DataClassJSONMixin):
+class Match(SQLModel, table=True):
     """
-    A Match, a collection of Games and additional info (e.g. archetype, date).
+    A match in an event
     """
 
+    id: Optional[int] = Field(default=None, primary_key=True)
     archetype: str
     date: str
-    is_match_loss: bool = False
-    games: list[Game] = field(default_factory=list)
-
-    @classmethod
-    def __post_deserialize__(cls, obj: Match) -> Match:
-        """
-        Mashumaro calls this after the object is created from JSON.
-        We use it to stitch the parent back into the children.
-        """
-        for game in obj.games:
-            game.parent_match_ref = weakref.ref(obj)
-        return obj
-
-    def add_game(self, game: Game) -> None:
-        """Programmatic way to create and link a child."""
-        # Manually set the weak reference
-        game.parent_match_ref = weakref.ref(self)
-        self.games.append(game)
-
-    def is_win(self) -> bool:
-        """Check if the match was won"""
-        if self.is_match_loss:
-            return False
-        total = 0
-        for game in self.games:
-            if game.win:
-                total += 1
-            else:
-                total -= 1
-
-        return total > 0
+    is_match_loss: bool
+    # event_id: int = Field(foreign_key="event.id")
+    event_id: Optional[int] = Field(default=None, foreign_key="event.id")
+    event: Event = Relationship(back_populates="matches")
+    games: List["Game"] = Relationship(back_populates="match")
 
 
-class MatchUp:
+class Game(SQLModel, table=True):
     """
-    A class to represent a match up and compute win rates. Rather than storing each individual match
-    the class tallies the total matches played and how many where won
+    A game in a match
     """
 
-    def __init__(self, archetype):
-        self.archetype = archetype
-        self.total = 0.0
-        self.win = 0.0
+    id: Optional[int] = Field(default=None, primary_key=True)
+    on_the_play: bool
+    win: bool
+    match_id: int = Field(foreign_key="match.id")
+    match: Match = Relationship(back_populates="games")
 
-    def win_rate(self) -> float:
-        """
-        Compute the win rate for a given MatchUp
-        """
 
-        return self.win / self.total
+class GameResult(Enum):
+    """
+    Enum for game state
+    """
 
-    def update(self, new_match: Match) -> None:
-        """
-        Update the MatchUp with the resul from a new Match
-        """
-
-        assert self.archetype == new_match.archetype
-        self.total += 1.0
-        self.win += new_match.is_win()
+    WIN = 1
+    LOSS = -1
+    UNSET = 0
