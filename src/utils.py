@@ -4,10 +4,10 @@ Utility function for the main ui
 
 from datetime import datetime
 from random import choice
-from typing import List, Sequence
+from typing import Sequence
 
 from sqlalchemy.engine.base import Engine
-from sqlmodel import Session, SQLModel, create_engine, select, text
+from sqlmodel import Session, select
 
 from src.data import Event, Game, Match
 
@@ -43,8 +43,6 @@ def generate_data(engine: Engine, events: int, matches_per_event: int) -> None:
             session.add(event)
         session.commit()
 
-    return None
-
 
 def toggle_emoji(button1, button2) -> None:
     """
@@ -67,7 +65,10 @@ def toggle_emoji(button1, button2) -> None:
         button1.classes("grayscale opacity-50")
 
 
-def is_match_won(match: Match):
+def is_match_won(match: Match) -> bool:
+    """
+    Check if a Match was won
+    """
     if match.is_match_loss:
         return False
     total = 0
@@ -81,11 +82,17 @@ def is_match_won(match: Match):
 
 
 def get_wins(matches: Sequence[Match]) -> int:
+    """
+    Return how many, out of a sequence of Matches, were won
+    """
 
     return len([m for m in matches if is_match_won(m)])
 
 
-def get_archetype(session) -> Sequence[str]:
+def get_archetypes(session) -> Sequence[str]:
+    """
+    Query the DB for all the archetypes for which a match was recorded
+    """
 
     statement = select(Match.archetype).distinct()
     autocomplete_options = session.exec(statement).all()

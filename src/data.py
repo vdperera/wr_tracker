@@ -5,7 +5,6 @@ Define the DB model
 from enum import Enum
 from typing import List, Optional
 
-from sqlalchemy.ext.hybrid import hybrid_property
 from sqlmodel import Field, Relationship, SQLModel
 
 

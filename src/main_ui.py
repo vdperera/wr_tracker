@@ -7,22 +7,24 @@ to insert new data.
 # we need to access the ._classes attribute of many UI elements either to check their state or to
 # change their values
 
-import json
 from datetime import datetime
-from enum import Enum
-from typing import Any, List
+from typing import Any
 
 from nicegui import ui
-from sqlalchemy.orm import joinedload, selectinload
-from sqlmodel import Session, SQLModel, create_engine, select, text
+from sqlalchemy.engine.base import Engine
+from sqlalchemy.orm import selectinload
+from sqlmodel import Session, create_engine, select
 
 from src.assets.icons import play_icon, tab_icon2
 from src.data import Event, Game, GameResult, Match
-from src.utils import get_archetype, get_wins, toggle_emoji
+from src.utils import get_archetypes, get_wins, toggle_emoji
 
 
-def init_db():
-    Event.metadata.create_all(engine)
+def init_db(db_engine: Engine):
+    """
+    Initialize the DB
+    """
+    Event.metadata.create_all(db_engine)
 
 
 class GameResultButtonPair:
@@ -66,8 +68,9 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
     elements of the ui
     """
 
-    def __init__(self, session):
+    def __init__(self, db_session):
         super().__init__()
+        self.db_session = db_session
         with self, ui.card().classes("p-0"):
             with ui.row().classes("items-center justify-end w-full"):
                 ui.button(icon="close", on_click=self.close_and_reset).props(
@@ -77,7 +80,7 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
                 ui.label("Enter Result").classes("text-h6")
             with ui.row().classes("px-8"):
                 self.archetype_input = ui.input(
-                    label="Archetype", autocomplete=get_archetype(session)
+                    label="Archetype", autocomplete=get_archetypes(db_session)
                 )
 
             with ui.grid(columns=4).classes("items-center justify-items-center px-8"):
@@ -214,10 +217,10 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
             games=[new_g1, new_g2, new_g3],
         )
 
-        session.add(new_match)
-        session.commit()
+        self.db_session.add(new_match)
+        self.db_session.commit()
 
-        self.archetype_input.set_autocomplete(get_archetype(session))
+        self.archetype_input.set_autocomplete(get_archetypes(self.db_session))
         generate_wr_table.refresh()
 
         # dump data
@@ -256,7 +259,7 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
 
 
 @ui.refreshable
-def generate_wr_table(session) -> None:
+def generate_wr_table(db_session) -> None:
     """
     Draws the win rate table starting from the raw data
     """
@@ -289,7 +292,7 @@ def generate_wr_table(session) -> None:
     ]
 
     # Get all the archetypes from autocomplete
-    autocomplete_options = get_archetype(session)
+    autocomplete_options = get_archetypes(db_session)
 
     # For each matchup get win rate and total matches
     for archetype in autocomplete_options:
@@ -299,7 +302,7 @@ def generate_wr_table(session) -> None:
             .options(selectinload(Match.games))  # type: ignore
         )
 
-        match_up = session.exec(statement).unique().all()
+        match_up = db_session.exec(statement).unique().all()
         total = len(match_up)
         wins = get_wins(match_up)
 
@@ -319,7 +322,7 @@ def generate_wr_table(session) -> None:
 if __name__ in {"__main__", "__mp_main__"}:
 
     engine = create_engine("sqlite:///matches.db")
-    init_db()
+    init_db(engine)
 
     # create a session and run the UI
     with Session(engine) as session:
