@@ -4,9 +4,10 @@ Utility function for the main ui
 
 from datetime import datetime
 from random import choice
-from typing import List
+from typing import List, Sequence
 
 from src.data import Game, Match
+from src.to_db.data import Match as MatchDB
 
 match_results = [[1, 1], [1, 0, 1], [0, 1, 1], [0, 0], [0, 1, 0], [1, 0, 0]]
 decks = ["boros", "jeskay blink", "esper Blink", "titan"]
@@ -71,3 +72,21 @@ def toggle_emoji(button1, button2) -> None:
 
     if not button1_grayed and button2_grayed:
         button1.classes("grayscale opacity-50")
+
+
+def is_match_won(match: MatchDB):
+    if match.is_match_loss:
+        return False
+    total = 0
+    for game in match.games:
+        if game.win:
+            total += 1
+        else:
+            total -= 1
+
+    return total > 0
+
+
+def get_wins(matches: Sequence[MatchDB]) -> int:
+
+    return len([m for m in matches if is_match_won(m)])

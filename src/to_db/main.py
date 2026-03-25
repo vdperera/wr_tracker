@@ -1,7 +1,8 @@
 from datetime import datetime
 from random import choice
+from typing import Sequence
 
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 from sqlmodel import Session, SQLModel, create_engine, select, text
 from tabulate import tabulate
 
@@ -79,31 +80,34 @@ def is_match_won(match: Match):
     return total > 0
 
 
-def get_wins(matches: list[Match]) -> int:
+def get_wins(matches: Sequence[Match]) -> int:
 
     return len([m for m in matches if is_match_won(m)])
 
 
 if __name__ == "__main__":
     init_db()  # Create the tables
-    # generate_data(2, 5)
+    generate_data(2, 5)
     print_all_tables(Event.metadata)
 
     with Session(engine) as session:
-        # match_up = session.exec(select(Match).where(Match.archetype == "boros")).all()
 
         statement = select(Match.archetype).distinct()
 
         # 2. Execute and get the list
         results = session.exec(statement).all()
+
         for archetype in results:
-            statement = (
+            statement2 = (
                 select(Match)
-                .where(Match.archetype == "archetype")
-                .options(joinedload(Match.games))
+                .where(Match.archetype == archetype)
+                .options(selectinload(Match.games))  # type: ignore
             )
 
-            match_up = session.exec(statement).unique().all()
+            match_up = session.exec(statement2).unique().all()
             total = len(match_up)
             wins = get_wins(match_up)
-            print(f"{archetype}\t{total}\t{wins/total}")
+            if total:
+                print(f"{archetype}\t{total}\t{(wins/total):.3f}")
+            else:
+                print(f"{archetype}\t{0}\t{0:.3f}")

@@ -28,7 +28,8 @@ class Match(SQLModel, table=True):
     archetype: str
     date: str
     is_match_loss: bool
-    event_id: int = Field(foreign_key="event.id")
+    # event_id: int = Field(foreign_key="event.id")
+    event_id: Optional[int] = Field(default=None, foreign_key="event.id")
     event: Event = Relationship(back_populates="matches")
     games: List["Game"] = Relationship(back_populates="match")
 

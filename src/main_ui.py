@@ -14,22 +14,30 @@ from typing import Any, List
 
 from mashumaro.codecs.json import JSONDecoder, JSONEncoder
 from nicegui import ui
+from sqlalchemy.orm import joinedload, selectinload
+from sqlmodel import Session, SQLModel, create_engine, select, text
 
 from src.assets.icons import play_icon, tab_icon2
 from src.data import Game, Match, MatchUp
-from src.utils import toggle_emoji
+from src.to_db.data import Event as EventDB
+from src.to_db.data import Game as GameDB
+from src.to_db.data import Match as MatchDB
+from src.utils import get_wins, toggle_emoji
 
-encoder = JSONEncoder(List[Match])
-decoder = JSONDecoder(List[Match])
+engine = create_engine("sqlite:///matches.db")
 
-try:
-    with open("results.json", "r", encoding="utf-8") as in_file:
-        match_data = in_file.read()
-        ALL_MATCHES = decoder.decode(match_data)
-except (FileNotFoundError, json.JSONDecodeError) as e:
-    ALL_MATCHES = []
 
-autocomplete_options = list({match.archetype.lower() for match in ALL_MATCHES})
+def init_db():
+    EventDB.metadata.create_all(engine)
+
+
+init_db()
+with Session(engine) as session:
+    statement = select(MatchDB.archetype).distinct()
+
+    # 2. Execute and get the list
+    autocomplete_options = session.exec(statement).all()
+    print(autocomplete_options)
 
 
 class GameResult(Enum):
@@ -216,30 +224,25 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
             return
 
         g1 = GameResultButtonPair(self.g1_win, self.g1_loss)
+        new_g1 = GameDB(on_the_play=self.checkbox1.value, win=g1.result.value == 1)
+
         g2 = GameResultButtonPair(self.g2_win, self.g2_loss)
+        new_g2 = GameDB(on_the_play=self.checkbox2.value, win=g2.result.value == 1)
+
         g3 = GameResultButtonPair(self.g3_win, self.g3_loss)
+        new_g3 = GameDB(on_the_play=self.checkbox2.value, win=g3.result.value == 1)
 
-        new_match = Match(
-            self.archetype_input.value.lower(),
-            datetime.now().isoformat(),
-            self.match_loss_cb.value,
-            [],
+        new_match = MatchDB(
+            archetype=self.archetype_input.value.lower(),
+            date=datetime.now().isoformat(),
+            is_match_loss=self.match_loss_cb.value,
+            games=[new_g1, new_g2, new_g3],
         )
-        for game_result, on_the_play in [
-            (g1, self.checkbox1.value),
-            (g2, self.checkbox2.value),
-            (g3, self.checkbox3.value),
-        ]:
-            if game_result.is_set:
-                new_match.add_game(Game(on_the_play, game_result.result.value == 1))
 
-        ALL_MATCHES.append(new_match)
-        global autocomplete_options  # pylint:disable=global-statement
-        autocomplete_options = list({match.archetype.lower() for match in ALL_MATCHES})
+        session.add(new_match)
+        session.commit()
+
         generate_wr_table.refresh()
-
-        with open("results.json", "w", encoding="utf-8") as out_file:
-            out_file.write(encoder.encode(ALL_MATCHES))
 
         # dump data
         self.reset_dialog()
@@ -281,15 +284,25 @@ def generate_wr_table() -> None:
     """
     Draws the win rate table starting from the raw data
     """
+    rows: list[dict[str, Any]] = []
+    for archetype in autocomplete_options:
+        statement2 = (
+            select(MatchDB)
+            .where(MatchDB.archetype == archetype)
+            .options(selectinload(MatchDB.games))  # type: ignore
+        )
 
-    data: dict[str, MatchUp] = {}
-    for match in ALL_MATCHES:
-        if match.archetype not in data:
-            match_up = MatchUp(match.archetype)
-            data[match.archetype] = match_up
-        if match.archetype == "Boros":
-            print(match)
-        data[match.archetype].update(match)
+        match_up = session.exec(statement2).unique().all()
+        total = len(match_up)
+        wins = get_wins(match_up)
+        rows.append(
+            {
+                "archetype": archetype,
+                "win_rate": f"{(wins / total):.3f}",
+                "total_matches": total,
+            }
+        )
+
     columns = [
         {
             "name": "archetype",
@@ -313,14 +326,6 @@ def generate_wr_table() -> None:
             "align": "center",
             "sortable": True,
         },
-    ]
-    rows: list[dict[str, Any]] = [
-        {
-            "archetype": key,
-            "win_rate": f"{value.win_rate():.3f}",
-            "total_matches": value.total,
-        }
-        for key, value in data.items()
     ]
     ui.table(columns=columns, rows=rows, row_key="name")
 
