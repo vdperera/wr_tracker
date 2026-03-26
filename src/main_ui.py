@@ -327,10 +327,16 @@ if __name__ in {"__main__", "__mp_main__"}:
     # create a session and run the UI
     with Session(engine) as session:
         with ui.column():
+            with ui.row().classes("w-full justify-between"):
+                with ui.button(icon="menu"):
+                    with ui.menu() as menu:
+                        ui.menu_item("Load", lambda: print("load"))
+                        ui.menu_item("Save", lambda: print("save"))
+                new_match_dialog = NewMatchDialog(session)
+                ui.button("New Match", on_click=new_match_dialog.open).classes(
+                    "self-end"
+                )
             generate_wr_table(session)
-
-            new_match_dialog = NewMatchDialog(session)
-            ui.button("New Match", on_click=new_match_dialog.open).classes("self-end")
 
         with ui.footer(value=True).classes(
             "py-1 bg-gray-800 text-white justify-center"
