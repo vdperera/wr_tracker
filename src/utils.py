@@ -4,12 +4,13 @@ Utility function for the main ui
 
 from datetime import datetime
 from random import choice
-from typing import Sequence
+from typing import Sequence, Tuple
 
 from sqlalchemy.engine.base import Engine
+from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
-from src.data import Event, Game, Match
+from src.data import Event, Game, GameStats, Match
 
 
 def generate_data(engine: Engine, events: int, matches_per_event: int) -> None:
@@ -97,3 +98,49 @@ def get_archetypes(session) -> Sequence[str]:
     statement = select(Match.archetype).distinct()
     autocomplete_options = session.exec(statement).all()
     return autocomplete_options
+
+
+def get_match_win(session, archetype) -> Tuple[int, int]:
+    """
+    For a given archetype, get the toal match played and how many were won
+    """
+
+    statement = (
+        select(Match)
+        .where(Match.archetype == archetype)
+        .options(selectinload(Match.games))  # type: ignore
+    )
+
+    match_up = session.exec(statement).unique().all()
+    total = len(match_up)
+    wins = get_wins(match_up)
+
+    return total, wins
+
+
+def get_game_stats(session, archetype) -> GameStats:
+    statement = select(Game).join(Match).where(Match.archetype == archetype).distinct()
+    games = session.exec(statement).all()
+    games_played = len(games)
+    games_won = len([game for game in games if game.win])
+
+    on_the_play_games_played = len([game for game in games if game.on_the_play])
+    on_the_play_games_won = len(
+        [game for game in games if game.on_the_play and game.win]
+    )
+
+    on_the_draw_games_played = len([game for game in games if not game.on_the_play])
+    on_the_draw_games_won = len(
+        [game for game in games if not game.on_the_play and game.win]
+    )
+
+    game_stats = GameStats(
+        games_played=games_played,
+        games_won=games_won,
+        on_the_play_games_played=on_the_play_games_played,
+        on_the_play_games_won=on_the_play_games_won,
+        on_the_draw_games_played=on_the_draw_games_played,
+        on_the_draw_games_won=on_the_draw_games_won,
+    )
+
+    return game_stats

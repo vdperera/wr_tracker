@@ -2,6 +2,7 @@
 Define the DB model
 """
 
+from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional
 
@@ -54,3 +55,29 @@ class GameResult(Enum):
     WIN = 1
     LOSS = -1
     UNSET = 0
+
+
+@dataclass
+class GameStats:
+    games_played: int
+    games_won: int
+    on_the_play_games_played: int
+    on_the_play_games_won: int
+    on_the_draw_games_played: int
+    on_the_draw_games_won: int
+
+    @property
+    def otp_win_rate(self) -> str:
+        return (
+            f"{(self.on_the_play_games_won/self.on_the_play_games_played):.3f}"
+            if self.on_the_play_games_played
+            else "N/A"
+        )
+
+    @property
+    def otd_win_rate(self) -> str:
+        return (
+            f"{(self.on_the_draw_games_won/self.on_the_draw_games_played):.3f}"
+            if self.on_the_draw_games_played
+            else "N/A"
+        )

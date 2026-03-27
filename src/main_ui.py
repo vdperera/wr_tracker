@@ -17,7 +17,13 @@ from sqlmodel import Session, create_engine, select
 
 from src.assets.icons import play_icon, tab_icon2
 from src.data import Event, Game, GameResult, Match
-from src.utils import get_archetypes, get_wins, toggle_emoji
+from src.utils import (
+    get_archetypes,
+    get_game_stats,
+    get_match_win,
+    get_wins,
+    toggle_emoji,
+)
 
 
 def init_db(db_engine: Engine):
@@ -139,14 +145,6 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
                 ui.button("Record", on_click=self.record)
 
             ui.label("")
-            # with (
-            #     ui.row()
-            #     .classes("absolute bottom-2 right-2 items-center gap-2")
-            #     .style("z-index: 10")
-            # ):
-            # with ui.card_actions().classes("justify-end q-pa-none gap-2"):
-            # with ui.card_actions().classes("w-full justify-end q-pa-none mt-auto"):
-            # with ui.row().classes("w-full justify-end items-center gap-1"):
             with ui.row().classes("justify-end items-center gap-2 w-full"):
                 ui.label("Match loss")
                 self.match_loss_cb = ui.checkbox()
@@ -201,20 +199,30 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
         if not validation:
             return
 
+        games_to_record = []
         g1 = GameResultButtonPair(self.g1_win, self.g1_loss)
-        new_g1 = Game(on_the_play=self.checkbox1.value, win=g1.result.value == 1)
+        if g1.is_set:
+            games_to_record.append(
+                Game(on_the_play=self.checkbox1.value, win=g1.result.value == 1)
+            )
 
         g2 = GameResultButtonPair(self.g2_win, self.g2_loss)
-        new_g2 = Game(on_the_play=self.checkbox2.value, win=g2.result.value == 1)
+        if g2.is_set:
+            games_to_record.append(
+                Game(on_the_play=self.checkbox2.value, win=g2.result.value == 1)
+            )
 
         g3 = GameResultButtonPair(self.g3_win, self.g3_loss)
-        new_g3 = Game(on_the_play=self.checkbox2.value, win=g3.result.value == 1)
+        if g3.is_set:
+            games_to_record.append(
+                Game(on_the_play=self.checkbox3.value, win=g3.result.value == 1)
+            )
 
         new_match = Match(
             archetype=self.archetype_input.value.lower(),
             date=datetime.now().isoformat(),
             is_match_loss=self.match_loss_cb.value,
-            games=[new_g1, new_g2, new_g3],
+            games=games_to_record,
         )
 
         self.db_session.add(new_match)
@@ -266,7 +274,7 @@ def generate_wr_table(db_session) -> None:
 
     # Prepare the rows and column lists
     rows: list[dict[str, Any]] = []
-    columns = [
+    columns: list[dict[str, Any]] = [
         {
             "name": "archetype",
             "label": "Archetype",
@@ -276,9 +284,9 @@ def generate_wr_table(db_session) -> None:
             "sortable": True,
         },
         {
-            "name": "win_rate",
+            "name": "match_win_rate",
             "label": "Match Win Rate",
-            "field": "win_rate",
+            "field": "match_win_rate",
             "align": "center",
             "sortable": True,
         },
@@ -289,34 +297,81 @@ def generate_wr_table(db_session) -> None:
             "align": "center",
             "sortable": True,
         },
+        {
+            "name": "game_win_rate",
+            "label": "Game Win Rate",
+            "field": "game_win_rate",
+            "align": "center",
+        },
+        {
+            "name": "total_games",
+            "label": "Total Games",
+            "field": "total_games",
+            "align": "center",
+        },
+        {
+            "name": "otp_game_win_rate",
+            "label": "On the Play Game Win Rate",
+            "field": "otp_game_win_rate",
+            "align": "center",
+        },
+        {
+            "name": "otd_game_win_rate",
+            "label": "On the Draw Game Win Rate",
+            "field": "otd_game_win_rate",
+            "align": "center",
+        },
     ]
 
     # Get all the archetypes from autocomplete
     autocomplete_options = get_archetypes(db_session)
 
     # For each matchup get win rate and total matches
+    grand_total_matches = 0
+    grand_total_match_wins = 0
+    grand_total_games = 0
+    grand_total_game_wins = 0
     for archetype in autocomplete_options:
-        statement = (
-            select(Match)
-            .where(Match.archetype == archetype)
-            .options(selectinload(Match.games))  # type: ignore
-        )
-
-        match_up = db_session.exec(statement).unique().all()
-        total = len(match_up)
-        wins = get_wins(match_up)
+        match_played, match_won = get_match_win(session, archetype)
+        game_stats = get_game_stats(session, archetype)
 
         # Add the values to rows
         rows.append(
             {
                 "archetype": archetype,
-                "win_rate": f"{(wins / total):.3f}",
-                "total_matches": total,
+                "match_win_rate": f"{(match_won / match_played):.3f}",
+                "total_matches": match_played,
+                "game_win_rate": f"{(game_stats.games_won/game_stats.games_played):.3f}",
+                "otp_game_win_rate": game_stats.otp_win_rate,
+                "otd_game_win_rate": game_stats.otd_win_rate,
+                "total_games": game_stats.games_played,
             }
         )
 
+    # need to compute manually the match ration for when the DB is empty
+    total_match_win_rate = (
+        (grand_total_match_wins / grand_total_matches) if grand_total_matches else 0
+    )
+    total_game_win_rate = (
+        (grand_total_game_wins / grand_total_games) if grand_total_games else 0
+    )
+
+    rows.append(
+        {
+            "archetype": "Total",
+            "match_win_rate": f"{total_match_win_rate:.3f}",
+            "total_matches": grand_total_matches,
+            "game_win_rate": f"{(total_game_win_rate):.3f}",
+            "total_games": grand_total_games,
+        }
+    )
+
+    # Bold the last row
+    ui.add_head_html(
+        "<style>.bold-last-row tbody tr:last-child { font-weight: bold; }</style>"
+    )
     # Add the table element to the UI
-    ui.table(columns=columns, rows=rows, row_key="name")
+    ui.table(columns=columns, rows=rows, row_key="name").classes("bold-last-row")
 
 
 if __name__ in {"__main__", "__mp_main__"}:
