@@ -335,6 +335,12 @@ def generate_wr_table(db_session) -> None:
         match_played, match_won = get_match_win(session, archetype)
         game_stats = get_game_stats(session, archetype)
 
+        grand_total_matches += match_played
+        grand_total_match_wins += match_won
+
+        grand_total_games += game_stats.games_played
+        grand_total_game_wins += game_stats.games_won
+
         # Add the values to rows
         rows.append(
             {
