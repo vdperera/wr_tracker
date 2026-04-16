@@ -10,7 +10,7 @@ to insert new data.
 from datetime import datetime
 from typing import Any
 
-from nicegui import ui
+from nicegui import Client, ui
 from sqlalchemy.engine.base import Engine
 from sqlmodel import Session, create_engine
 
@@ -352,30 +352,73 @@ def generate_wr_table(db_session) -> None:
         }
     )
 
-    # Bold the last row
+    # CSS needed to style (bold and sticky) the first and last rows
     ui.add_head_html(
-        "<style>.bold-last-row tbody tr:last-child { font-weight: bold; }</style>"
+        """
+        <style>
+            /* Sticky Header */
+            .sticky-table thead tr:first-child th {
+                background-color: white;
+                position: sticky;
+                top: 0;
+                z-index: 20;
+            }
+            /* Sticky & Bold Last Row */
+            .sticky-table tbody tr:last-child td {
+                background-color: #f8f8f8; /* Light gray to distinguish it */
+                position: sticky;
+                bottom: 0;
+                z-index: 10;
+                font-weight: bold;
+                border-top: 2px solid #ddd;
+            }
+        </style>
+    """
     )
+
     # Add the table element to the UI
-    ui.table(columns=columns, rows=rows, row_key="name").classes("bold-last-row")
+    ui.table(columns=columns, rows=rows, row_key="name").classes(
+        "sticky-table w-full flex-grow overflow-auto"
+    )
 
 
-if __name__ in {"__main__", "__mp_main__"}:
-
+@ui.page("/")
+def main_page(client: Client):
+    """
+    Define the ui main page
+    """
     engine = create_engine("sqlite:///matches.db")
     init_db(engine)
 
     # create a session and run the UI
     with Session(engine) as session:
-        with ui.column():
-            new_match_dialog = NewMatchDialog(session)
-            ui.button("New Match", on_click=new_match_dialog.open).classes("self-end")
+        # 1. Strip all default NiceGUI/Quasar padding and force body height
+        client.content.classes(remove="q-pa-md")
 
-            generate_wr_table(session)
+        # 2. Force the actual window body to never scroll
+        ui.query("html").style("height: 100vh; overflow: hidden;")
+        ui.query("body").style("height: 100vh; overflow: hidden;")
+
+        with ui.column().classes("w-full items-center"):
+
+            with ui.column().classes(
+                "items-end w-full h-[calc(100vh-50px)] p-4 overflow-hidden"
+            ):
+                new_match_dialog = NewMatchDialog(session)
+                with ui.row().classes("w-full"):
+                    ui.button("Load", icon="folder_open")
+                    ui.button("Save", icon="save")
+                    ui.space()
+                    ui.button("New Match", on_click=new_match_dialog.open).classes(
+                        "self-end"
+                    )
+
+                generate_wr_table(session)
 
         with ui.footer(value=True).classes(
             "py-1 bg-gray-800 text-white justify-center"
         ):
             ui.label("© 2026 Vittorio Perera").classes("text-xs")
 
-        ui.run(title="Win Rate Tracker", favicon=tab_icon2)
+
+ui.run(title="Win Rate Tracker", favicon=tab_icon2)
