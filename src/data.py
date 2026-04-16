@@ -59,6 +59,10 @@ class GameResult(Enum):
 
 @dataclass
 class GameStats:
+    """
+    Dataclass to store game stats
+    """
+
     games_played: int
     games_won: int
     on_the_play_games_played: int
@@ -68,6 +72,9 @@ class GameStats:
 
     @property
     def otp_win_rate(self) -> str:
+        """
+        Return the win rate "on the play"
+        """
         return (
             f"{(self.on_the_play_games_won/self.on_the_play_games_played):.3f}"
             if self.on_the_play_games_played
@@ -76,6 +83,9 @@ class GameStats:
 
     @property
     def otd_win_rate(self) -> str:
+        """
+        Return the win rate "on the draw"
+        """
         return (
             f"{(self.on_the_draw_games_won/self.on_the_draw_games_played):.3f}"
             if self.on_the_draw_games_played

@@ -119,6 +119,9 @@ def get_match_win(session, archetype) -> Tuple[int, int]:
 
 
 def get_game_stats(session, archetype) -> GameStats:
+    """
+    Given an archetype return statitics for all the games played against it
+    """
     statement = select(Game).join(Match).where(Match.archetype == archetype).distinct()
     games = session.exec(statement).all()
     games_played = len(games)

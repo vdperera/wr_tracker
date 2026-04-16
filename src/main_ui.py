@@ -12,18 +12,11 @@ from typing import Any
 
 from nicegui import ui
 from sqlalchemy.engine.base import Engine
-from sqlalchemy.orm import selectinload
-from sqlmodel import Session, create_engine, select
+from sqlmodel import Session, create_engine
 
 from src.assets.icons import play_icon, tab_icon2
 from src.data import Event, Game, GameResult, Match
-from src.utils import (
-    get_archetypes,
-    get_game_stats,
-    get_match_win,
-    get_wins,
-    toggle_emoji,
-)
+from src.utils import get_archetypes, get_game_stats, get_match_win, toggle_emoji
 
 
 def init_db(db_engine: Engine):
@@ -331,15 +324,25 @@ def generate_wr_table(db_session) -> None:
     grand_total_match_wins = 0
     grand_total_games = 0
     grand_total_game_wins = 0
+    grand_total_otp_games = 0
+    grand_total_otp_games_win = 0
+    grand_total_otd_games = 0
+    grand_total_otd_games_win = 0
+
     for archetype in autocomplete_options:
-        match_played, match_won = get_match_win(session, archetype)
-        game_stats = get_game_stats(session, archetype)
+        match_played, match_won = get_match_win(db_session, archetype)
+        game_stats = get_game_stats(db_session, archetype)
 
         grand_total_matches += match_played
         grand_total_match_wins += match_won
 
         grand_total_games += game_stats.games_played
         grand_total_game_wins += game_stats.games_won
+
+        grand_total_otp_games += game_stats.on_the_play_games_played
+        grand_total_otp_games_win += game_stats.on_the_play_games_won
+        grand_total_otd_games += game_stats.on_the_draw_games_played
+        grand_total_otd_games_win += game_stats.on_the_draw_games_won
 
         # Add the values to rows
         rows.append(
@@ -362,12 +365,25 @@ def generate_wr_table(db_session) -> None:
         (grand_total_game_wins / grand_total_games) if grand_total_games else 0
     )
 
+    total_otp_game_win_rate = (
+        (grand_total_otp_games_win / grand_total_otp_games)
+        if grand_total_otp_games
+        else 0
+    )
+    total_otd_game_win_rate = (
+        (grand_total_otd_games_win / grand_total_otd_games)
+        if grand_total_otd_games
+        else 0
+    )
+
     rows.append(
         {
             "archetype": "Total",
             "match_win_rate": f"{total_match_win_rate:.3f}",
             "total_matches": grand_total_matches,
             "game_win_rate": f"{(total_game_win_rate):.3f}",
+            "otp_game_win_rate": f"{total_otp_game_win_rate:.3f}",
+            "otd_game_win_rate": f"{total_otd_game_win_rate:.3f}",
             "total_games": grand_total_games,
         }
     )
@@ -388,10 +404,10 @@ if __name__ in {"__main__", "__mp_main__"}:
     # create a session and run the UI
     with Session(engine) as session:
         with ui.column():
-            generate_wr_table(session)
-
             new_match_dialog = NewMatchDialog(session)
             ui.button("New Match", on_click=new_match_dialog.open).classes("self-end")
+
+            generate_wr_table(session)
 
         with ui.footer(value=True).classes(
             "py-1 bg-gray-800 text-white justify-center"
