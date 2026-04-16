@@ -2,6 +2,7 @@
 Define the DB model
 """
 
+from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional
 
@@ -54,3 +55,47 @@ class GameResult(Enum):
     WIN = 1
     LOSS = -1
     UNSET = 0
+
+
+@dataclass
+class ResultData:
+    """
+    Generic data class to store result whether it's a game, a match or else
+    """
+
+    played: int = 0
+    won: int = 0
+
+    @property
+    def win_rate(self) -> str:
+        """
+        Compute the win rate
+        """
+        return f"{(self.won/self.played):.3f}" if self.played else "N/A"
+
+    def __add__(self, other):
+        if not isinstance(other, ResultData):
+            return NotImplemented
+        return ResultData(self.played + other.played, self.won + other.won)
+
+
+@dataclass
+class ArchetypeData:
+    """
+    Dataclass to store, in one object, all the stats we plan to show in the table
+    """
+
+    matches: ResultData = ResultData(0, 0)
+    games: ResultData = ResultData(0, 0)
+    otp_games: ResultData = ResultData(0, 0)
+    otd_games: ResultData = ResultData(0, 0)
+
+    def __add__(self, other):
+        if not isinstance(other, ArchetypeData):
+            return NotImplemented
+        return ArchetypeData(
+            self.matches + other.matches,
+            self.games + other.games,
+            self.otp_games + other.otp_games,
+            self.otd_games + other.otd_games,
+        )

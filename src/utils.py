@@ -7,9 +7,10 @@ from random import choice
 from typing import Sequence
 
 from sqlalchemy.engine.base import Engine
+from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
-from src.data import Event, Game, Match
+from src.data import ArchetypeData, Event, Game, Match, ResultData
 
 
 def generate_data(engine: Engine, events: int, matches_per_event: int) -> None:
@@ -97,3 +98,51 @@ def get_archetypes(session) -> Sequence[str]:
     statement = select(Match.archetype).distinct()
     autocomplete_options = session.exec(statement).all()
     return autocomplete_options
+
+
+def get_archetype_results(session, archetype) -> ArchetypeData:
+    """
+    Given a specific archetype (i.e. a label) query the database for the results record and pack
+    them nicely in the appropriate dataclass
+    """
+
+    # match results query
+    match_statement = (
+        select(Match)
+        .where(Match.archetype == archetype)
+        .options(selectinload(Match.games))  # type: ignore
+    )
+    match_query_result = session.exec(match_statement).unique().all()
+    match_data = ResultData(
+        played=len(match_query_result), won=get_wins(match_query_result)
+    )
+
+    # game results query
+    game_statement = (
+        select(Game).join(Match).where(Match.archetype == archetype).distinct()
+    )
+    game_query_result = session.exec(game_statement).all()
+
+    game_data = ResultData(
+        played=len(game_query_result),
+        won=len([game for game in game_query_result if game.win]),
+    )
+
+    otp_game_data = ResultData(
+        played=len([game for game in game_query_result if game.on_the_play]),
+        won=len([game for game in game_query_result if game.on_the_play and game.win]),
+    )
+
+    otd_game_data = ResultData(
+        played=len([game for game in game_query_result if not game.on_the_play]),
+        won=len(
+            [game for game in game_query_result if not game.on_the_play and game.win]
+        ),
+    )
+
+    return ArchetypeData(
+        matches=match_data,
+        games=game_data,
+        otp_games=otp_game_data,
+        otd_games=otd_game_data,
+    )
