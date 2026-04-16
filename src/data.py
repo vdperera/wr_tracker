@@ -58,36 +58,44 @@ class GameResult(Enum):
 
 
 @dataclass
-class GameStats:
+class ResultData:
     """
-    Dataclass to store game stats
+    Generic data class to store result whether it's a game, a match or else
     """
 
-    games_played: int
-    games_won: int
-    on_the_play_games_played: int
-    on_the_play_games_won: int
-    on_the_draw_games_played: int
-    on_the_draw_games_won: int
+    played: int = 0
+    won: int = 0
 
     @property
-    def otp_win_rate(self) -> str:
+    def win_rate(self) -> str:
         """
-        Return the win rate "on the play"
+        Compute the win rate
         """
-        return (
-            f"{(self.on_the_play_games_won/self.on_the_play_games_played):.3f}"
-            if self.on_the_play_games_played
-            else "N/A"
-        )
+        return f"{(self.won/self.played):.3f}" if self.played else "N/A"
 
-    @property
-    def otd_win_rate(self) -> str:
-        """
-        Return the win rate "on the draw"
-        """
-        return (
-            f"{(self.on_the_draw_games_won/self.on_the_draw_games_played):.3f}"
-            if self.on_the_draw_games_played
-            else "N/A"
+    def __add__(self, other):
+        if not isinstance(other, ResultData):
+            return NotImplemented
+        return ResultData(self.played + other.played, self.won + other.won)
+
+
+@dataclass
+class ArchetypeData:
+    """
+    Dataclass to store, in one object, all the stats we plan to show in the table
+    """
+
+    matches: ResultData = ResultData(0, 0)
+    games: ResultData = ResultData(0, 0)
+    otp_games: ResultData = ResultData(0, 0)
+    otd_games: ResultData = ResultData(0, 0)
+
+    def __add__(self, other):
+        if not isinstance(other, ArchetypeData):
+            return NotImplemented
+        return ArchetypeData(
+            self.matches + other.matches,
+            self.games + other.games,
+            self.otp_games + other.otp_games,
+            self.otd_games + other.otd_games,
         )

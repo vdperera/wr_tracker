@@ -4,13 +4,13 @@ Utility function for the main ui
 
 from datetime import datetime
 from random import choice
-from typing import Sequence, Tuple
+from typing import Sequence
 
 from sqlalchemy.engine.base import Engine
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
-from src.data import Event, Game, GameStats, Match
+from src.data import ArchetypeData, Event, Game, Match, ResultData
 
 
 def generate_data(engine: Engine, events: int, matches_per_event: int) -> None:
@@ -100,50 +100,49 @@ def get_archetypes(session) -> Sequence[str]:
     return autocomplete_options
 
 
-def get_match_win(session, archetype) -> Tuple[int, int]:
+def get_archetype_results(session, archetype) -> ArchetypeData:
     """
-    For a given archetype, get the toal match played and how many were won
+    Given a specific archetype (i.e. a label) query the database for the results record and pack
+    them nicely in the appropriate dataclass
     """
 
-    statement = (
+    # match results query
+    match_statement = (
         select(Match)
         .where(Match.archetype == archetype)
         .options(selectinload(Match.games))  # type: ignore
     )
-
-    match_up = session.exec(statement).unique().all()
-    total = len(match_up)
-    wins = get_wins(match_up)
-
-    return total, wins
-
-
-def get_game_stats(session, archetype) -> GameStats:
-    """
-    Given an archetype return statitics for all the games played against it
-    """
-    statement = select(Game).join(Match).where(Match.archetype == archetype).distinct()
-    games = session.exec(statement).all()
-    games_played = len(games)
-    games_won = len([game for game in games if game.win])
-
-    on_the_play_games_played = len([game for game in games if game.on_the_play])
-    on_the_play_games_won = len(
-        [game for game in games if game.on_the_play and game.win]
+    match_query_result = session.exec(match_statement).unique().all()
+    match_data = ResultData(
+        played=len(match_query_result), won=get_wins(match_query_result)
     )
 
-    on_the_draw_games_played = len([game for game in games if not game.on_the_play])
-    on_the_draw_games_won = len(
-        [game for game in games if not game.on_the_play and game.win]
+    # game results query
+    game_statement = (
+        select(Game).join(Match).where(Match.archetype == archetype).distinct()
+    )
+    game_query_result = session.exec(game_statement).all()
+
+    game_data = ResultData(
+        played=len(game_query_result),
+        won=len([game for game in game_query_result if game.win]),
     )
 
-    game_stats = GameStats(
-        games_played=games_played,
-        games_won=games_won,
-        on_the_play_games_played=on_the_play_games_played,
-        on_the_play_games_won=on_the_play_games_won,
-        on_the_draw_games_played=on_the_draw_games_played,
-        on_the_draw_games_won=on_the_draw_games_won,
+    otp_game_data = ResultData(
+        played=len([game for game in game_query_result if game.on_the_play]),
+        won=len([game for game in game_query_result if game.on_the_play and game.win]),
     )
 
-    return game_stats
+    otd_game_data = ResultData(
+        played=len([game for game in game_query_result if not game.on_the_play]),
+        won=len(
+            [game for game in game_query_result if not game.on_the_play and game.win]
+        ),
+    )
+
+    return ArchetypeData(
+        matches=match_data,
+        games=game_data,
+        otp_games=otp_game_data,
+        otd_games=otd_game_data,
+    )

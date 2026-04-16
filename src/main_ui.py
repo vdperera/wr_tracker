@@ -15,8 +15,8 @@ from sqlalchemy.engine.base import Engine
 from sqlmodel import Session, create_engine
 
 from src.assets.icons import play_icon, tab_icon2
-from src.data import Event, Game, GameResult, Match
-from src.utils import get_archetypes, get_game_stats, get_match_win, toggle_emoji
+from src.data import ArchetypeData, Event, Game, GameResult, Match
+from src.utils import get_archetype_results, get_archetypes, toggle_emoji
 
 
 def init_db(db_engine: Engine):
@@ -320,71 +320,35 @@ def generate_wr_table(db_session) -> None:
     autocomplete_options = get_archetypes(db_session)
 
     # For each matchup get win rate and total matches
-    grand_total_matches = 0
-    grand_total_match_wins = 0
-    grand_total_games = 0
-    grand_total_game_wins = 0
-    grand_total_otp_games = 0
-    grand_total_otp_games_win = 0
-    grand_total_otd_games = 0
-    grand_total_otd_games_win = 0
+    grand_total = ArchetypeData()
 
     for archetype in autocomplete_options:
-        match_played, match_won = get_match_win(db_session, archetype)
-        game_stats = get_game_stats(db_session, archetype)
 
-        grand_total_matches += match_played
-        grand_total_match_wins += match_won
-
-        grand_total_games += game_stats.games_played
-        grand_total_game_wins += game_stats.games_won
-
-        grand_total_otp_games += game_stats.on_the_play_games_played
-        grand_total_otp_games_win += game_stats.on_the_play_games_won
-        grand_total_otd_games += game_stats.on_the_draw_games_played
-        grand_total_otd_games_win += game_stats.on_the_draw_games_won
+        results = get_archetype_results(db_session, archetype)
+        grand_total += results
 
         # Add the values to rows
         rows.append(
             {
                 "archetype": archetype,
-                "match_win_rate": f"{(match_won / match_played):.3f}",
-                "total_matches": match_played,
-                "game_win_rate": f"{(game_stats.games_won/game_stats.games_played):.3f}",
-                "otp_game_win_rate": game_stats.otp_win_rate,
-                "otd_game_win_rate": game_stats.otd_win_rate,
-                "total_games": game_stats.games_played,
+                "match_win_rate": results.matches.win_rate,
+                "total_matches": results.matches.played,
+                "game_win_rate": results.games.win_rate,
+                "otp_game_win_rate": results.otp_games.win_rate,
+                "otd_game_win_rate": results.otd_games.win_rate,
+                "total_games": results.games.played,
             }
         )
-
-    # need to compute manually the match ration for when the DB is empty
-    total_match_win_rate = (
-        (grand_total_match_wins / grand_total_matches) if grand_total_matches else 0
-    )
-    total_game_win_rate = (
-        (grand_total_game_wins / grand_total_games) if grand_total_games else 0
-    )
-
-    total_otp_game_win_rate = (
-        (grand_total_otp_games_win / grand_total_otp_games)
-        if grand_total_otp_games
-        else 0
-    )
-    total_otd_game_win_rate = (
-        (grand_total_otd_games_win / grand_total_otd_games)
-        if grand_total_otd_games
-        else 0
-    )
 
     rows.append(
         {
             "archetype": "Total",
-            "match_win_rate": f"{total_match_win_rate:.3f}",
-            "total_matches": grand_total_matches,
-            "game_win_rate": f"{(total_game_win_rate):.3f}",
-            "otp_game_win_rate": f"{total_otp_game_win_rate:.3f}",
-            "otd_game_win_rate": f"{total_otd_game_win_rate:.3f}",
-            "total_games": grand_total_games,
+            "match_win_rate": grand_total.matches.win_rate,
+            "total_matches": grand_total.matches.played,
+            "game_win_rate": grand_total.games.win_rate,
+            "otp_game_win_rate": grand_total.otp_games.win_rate,
+            "otd_game_win_rate": grand_total.otd_games.win_rate,
+            "total_games": grand_total.games.played,
         }
     )
 
