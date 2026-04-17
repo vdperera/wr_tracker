@@ -3,379 +3,55 @@ main ui file for tracking win rate. Loads data from json, create report table an
 to insert new data.
 """
 
-# pylint: disable=protected-access
-# we need to access the ._classes attribute of many UI elements either to check their state or to
-# change their values
+from nicegui import Client, ui
+from sqlalchemy.orm import sessionmaker
+from sqlmodel import create_engine
 
-from datetime import datetime
-from typing import Any
-
-from nicegui import ui
-from sqlalchemy.engine.base import Engine
-from sqlmodel import Session, create_engine
-
-from src.assets.icons import play_icon, tab_icon2
-from src.data import ArchetypeData, Event, Game, GameResult, Match
-from src.utils import get_archetype_results, get_archetypes, toggle_emoji
+from src.assets.icons import TAB_ICON2
+from src.data import Event
+from src.ui_utils import NewMatchDialog, wr_table
+from src.utils import load_db_file, save_db_file
 
 
-def init_db(db_engine: Engine):
+@ui.page("/")
+def main_page(client: Client):
     """
-    Initialize the DB
+    Define the ui main page
     """
-    Event.metadata.create_all(db_engine)
+    # Setup the DB
+    engine = create_engine("sqlite://")
+    Event.metadata.create_all(engine)
+    session_maker = sessionmaker(bind=engine)
 
+    # Setup the page, strip all default NiceGUI/Quasar padding and force the actual window body
+    # to never scroll
+    client.content.classes(remove="q-pa-md")
+    ui.query("html").style("height: 100vh; overflow: hidden;")
+    ui.query("body").style("height: 100vh; overflow: hidden;")
 
-class GameResultButtonPair:
-    """
-    Class to quickly access the state of a pair of button used to enter the result of a game
-    """
+    # Setup the main UI elements, buttons and table
+    with ui.column().classes("w-full items-center"):
 
-    def __init__(self, win_button, loss_button):
-        self.win = win_button
-        self.loss = loss_button
-
-    @property
-    def is_set(self) -> bool:
-        """
-        Check if one of the two button was set
-        """
-        return ("grayscale" not in self.win._classes) or (
-            "grayscale" not in self.loss._classes
-        )
-
-    @property
-    def result(self) -> GameResult:
-        """
-        Check the state of the two button to see if the game was a win, a loss or if no result was
-        entered (UNSET)
-        """
-
-        if not self.is_set:
-            return GameResult.UNSET
-
-        if "grayscale" not in self.win._classes:
-            return GameResult.WIN
-
-        return GameResult.LOSS
-
-
-# The class needs to have many attributes as each refers to a ui element
-class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
-    """
-    A class for the dialog window used to enter new results. Used to store and proces different
-    elements of the ui
-    """
-
-    def __init__(self, db_session):
-        super().__init__()
-        self.db_session = db_session
-        with self, ui.card().classes("p-0"):
-            with ui.row().classes("items-center justify-end w-full"):
-                ui.button(icon="close", on_click=self.close_and_reset).props(
-                    "flat round dense"
-                )
-            with ui.row().classes("w-full items-center justify-between px-8 -mt-4"):
-                ui.label("Enter Result").classes("text-h6")
-            with ui.row().classes("px-8"):
-                self.archetype_input = ui.input(
-                    label="Archetype", autocomplete=get_archetypes(db_session)
-                )
-
-            with ui.grid(columns=4).classes("items-center justify-items-center px-8"):
-
-                # Row 1 - just the 'on the play' icon and 3 placeholders
-                ui.label("")
-                ui.html(play_icon, sanitize=False).classes("text-3xl").tooltip(
-                    '"On the play" checkbox'
-                )
-                ui.label("")
-                ui.label("")
-
-                # Row 2 - game 1
-                ui.label("G1").classes("text-2xl -mt-3")
-                self.checkbox1 = ui.checkbox().classes("text-3xl -mt-3")
-                self.g1_win = ui.label("🙂").classes(
-                    "text-3xl cursor-pointer transition-all grayscale opacity-50 -mt-3"
-                )
-                self.g1_loss = ui.label("🙁").classes(
-                    "text-3xl cursor-pointer transition-all grayscale opacity-50 -mt-3"
-                )
-                self.g1_win.on("click", lambda: toggle_emoji(self.g1_win, self.g1_loss))
-                self.g1_loss.on(
-                    "click", lambda: toggle_emoji(self.g1_loss, self.g1_win)
-                )
-
-                # Row 3 - game 2
-                ui.label("G2").classes("text-2xl")
-                self.checkbox2 = ui.checkbox().classes("text-3xl")
-                self.g2_win = ui.label("🙂").classes(
-                    "text-3xl cursor-pointer transition-all grayscale opacity-50"
-                )
-                self.g2_loss = ui.label("🙁").classes(
-                    "text-3xl cursor-pointer transition-all grayscale opacity-50"
-                )
-                self.g2_win.on("click", lambda: toggle_emoji(self.g2_win, self.g2_loss))
-                self.g2_loss.on(
-                    "click", lambda: toggle_emoji(self.g2_loss, self.g2_win)
-                )
-
-                # Row 4 - game 3
-                ui.label("G3").classes("text-2xl")
-                self.checkbox3 = ui.checkbox().classes("text-3xl")
-                self.g3_win = ui.label("🙂").classes(
-                    "text-3xl cursor-pointer transition-all grayscale opacity-50"
-                )
-                self.g3_loss = ui.label("🙁").classes(
-                    "text-3xl cursor-pointer transition-all grayscale opacity-50"
-                )
-                self.g3_win.on("click", lambda: toggle_emoji(self.g3_win, self.g3_loss))
-                self.g3_loss.on(
-                    "click", lambda: toggle_emoji(self.g3_loss, self.g3_win)
-                )
-
-            with ui.row().classes("w-full justify-center"):
-                ui.button("Record", on_click=self.record)
-
-            ui.label("")
-            with ui.row().classes("justify-end items-center gap-2 w-full"):
-                ui.label("Match loss")
-                self.match_loss_cb = ui.checkbox()
-
-    def _validate(self) -> bool:
-        """
-        Validate the input dialg state. if valid return True else False
-        """
-        validation = True
-
-        # Check if the archetype was entered
-        if self.archetype_input.value == "":
-            ui.notify("Missing Archetype!", type="warning")
-            validation = False
-
-        # Check if all games are set properly
-        g1 = GameResultButtonPair(self.g1_win, self.g1_loss)
-        g2 = GameResultButtonPair(self.g2_win, self.g2_loss)
-        g3 = GameResultButtonPair(self.g3_win, self.g3_loss)
-        valid_game_states = [[1, 0, 0], [1, 1, 0], [1, 1, 1]]
-        if [g1.is_set, g2.is_set, g3.is_set] not in valid_game_states:
-            ui.notify("Missing game result(s)!", type="warning")
-            validation = False
-
-        # Check if the game result is valid (e.g. 2-1 is valid but 0-3 is not)
-        valid_game_results = [
-            [1, -1, 1],
-            [-1, 1, 1],
-            [1, -1, -1],
-            [1, 1, 0],
-            [-1, -1, 0],
-            [-1, 1, -1],
-            [1, 0, 0],
-            [-1, 0, 0],
-            [1, -1, 0],
-            [-1, 1, 0],
-        ]
-        actual_result = [g1.result.value, g2.result.value, g3.result.value]
-        if actual_result not in valid_game_results:
-            ui.notify("Invalid Result", type="warning")
-            validation = False
-
-        return validation
-
-    def record(self):
-        """
-        Record the result of a game. First validate the user input the add it to the data being
-        saved
-        """
-
-        validation = self._validate()
-        if not validation:
-            return
-
-        games_to_record = []
-        g1 = GameResultButtonPair(self.g1_win, self.g1_loss)
-        if g1.is_set:
-            games_to_record.append(
-                Game(on_the_play=self.checkbox1.value, win=g1.result.value == 1)
-            )
-
-        g2 = GameResultButtonPair(self.g2_win, self.g2_loss)
-        if g2.is_set:
-            games_to_record.append(
-                Game(on_the_play=self.checkbox2.value, win=g2.result.value == 1)
-            )
-
-        g3 = GameResultButtonPair(self.g3_win, self.g3_loss)
-        if g3.is_set:
-            games_to_record.append(
-                Game(on_the_play=self.checkbox3.value, win=g3.result.value == 1)
-            )
-
-        new_match = Match(
-            archetype=self.archetype_input.value.lower(),
-            date=datetime.now().isoformat(),
-            is_match_loss=self.match_loss_cb.value,
-            games=games_to_record,
-        )
-
-        self.db_session.add(new_match)
-        self.db_session.commit()
-
-        self.archetype_input.set_autocomplete(get_archetypes(self.db_session))
-        generate_wr_table.refresh()
-
-        # dump data
-        self.reset_dialog()
-        self.close()
-
-    def reset_dialog(self):
-        """
-        Called before closing the dialog takes care of resetting each element to the initial state
-        """
-
-        if "grayscale" not in self.g1_win._classes:
-            self.g1_win.classes("grayscale opacity-50")
-        if "grayscale" not in self.g1_loss._classes:
-            self.g1_loss.classes("grayscale opacity-50")
-        if "grayscale" not in self.g2_win._classes:
-            self.g2_win.classes("grayscale opacity-50")
-        if "grayscale" not in self.g2_loss._classes:
-            self.g2_loss.classes("grayscale opacity-50")
-        if "grayscale" not in self.g3_win._classes:
-            self.g3_win.classes("grayscale opacity-50")
-        if "grayscale" not in self.g3_loss._classes:
-            self.g3_loss.classes("grayscale opacity-50")
-
-        self.archetype_input.set_value("")
-        self.checkbox1.set_value(False)
-        self.checkbox2.set_value(False)
-        self.checkbox3.set_value(False)
-
-    def close_and_reset(self):
-        """
-        Properly closes the dialog window
-        """
-        self.reset_dialog()
-        self.close()
-
-
-@ui.refreshable
-def generate_wr_table(db_session) -> None:
-    """
-    Draws the win rate table starting from the raw data
-    """
-
-    # Prepare the rows and column lists
-    rows: list[dict[str, Any]] = []
-    columns: list[dict[str, Any]] = [
-        {
-            "name": "archetype",
-            "label": "Archetype",
-            "field": "archetype",
-            "required": True,
-            "align": "left",
-            "sortable": True,
-        },
-        {
-            "name": "match_win_rate",
-            "label": "Match Win Rate",
-            "field": "match_win_rate",
-            "align": "center",
-            "sortable": True,
-        },
-        {
-            "name": "total_matches",
-            "label": "Total Matches",
-            "field": "total_matches",
-            "align": "center",
-            "sortable": True,
-        },
-        {
-            "name": "game_win_rate",
-            "label": "Game Win Rate",
-            "field": "game_win_rate",
-            "align": "center",
-        },
-        {
-            "name": "total_games",
-            "label": "Total Games",
-            "field": "total_games",
-            "align": "center",
-        },
-        {
-            "name": "otp_game_win_rate",
-            "label": "On the Play Game Win Rate",
-            "field": "otp_game_win_rate",
-            "align": "center",
-        },
-        {
-            "name": "otd_game_win_rate",
-            "label": "On the Draw Game Win Rate",
-            "field": "otd_game_win_rate",
-            "align": "center",
-        },
-    ]
-
-    # Get all the archetypes from autocomplete
-    autocomplete_options = get_archetypes(db_session)
-
-    # For each matchup get win rate and total matches
-    grand_total = ArchetypeData()
-
-    for archetype in autocomplete_options:
-
-        results = get_archetype_results(db_session, archetype)
-        grand_total += results
-
-        # Add the values to rows
-        rows.append(
-            {
-                "archetype": archetype,
-                "match_win_rate": results.matches.win_rate,
-                "total_matches": results.matches.played,
-                "game_win_rate": results.games.win_rate,
-                "otp_game_win_rate": results.otp_games.win_rate,
-                "otd_game_win_rate": results.otd_games.win_rate,
-                "total_games": results.games.played,
-            }
-        )
-
-    rows.append(
-        {
-            "archetype": "Total",
-            "match_win_rate": grand_total.matches.win_rate,
-            "total_matches": grand_total.matches.played,
-            "game_win_rate": grand_total.games.win_rate,
-            "otp_game_win_rate": grand_total.otp_games.win_rate,
-            "otd_game_win_rate": grand_total.otd_games.win_rate,
-            "total_games": grand_total.games.played,
-        }
-    )
-
-    # Bold the last row
-    ui.add_head_html(
-        "<style>.bold-last-row tbody tr:last-child { font-weight: bold; }</style>"
-    )
-    # Add the table element to the UI
-    ui.table(columns=columns, rows=rows, row_key="name").classes("bold-last-row")
-
-
-if __name__ in {"__main__", "__mp_main__"}:
-
-    engine = create_engine("sqlite:///matches.db")
-    init_db(engine)
-
-    # create a session and run the UI
-    with Session(engine) as session:
-        with ui.column():
-            new_match_dialog = NewMatchDialog(session)
-            ui.button("New Match", on_click=new_match_dialog.open).classes("self-end")
-
-            generate_wr_table(session)
-
-        with ui.footer(value=True).classes(
-            "py-1 bg-gray-800 text-white justify-center"
+        with ui.column().classes(
+            "items-end w-full h-[calc(100vh-50px)] p-4 overflow-hidden"
         ):
-            ui.label("© 2026 Vittorio Perera").classes("text-xs")
+            new_match_dialog = NewMatchDialog(session_maker)
+            with ui.row().classes("w-full"):
+                ui.button(
+                    "Load",
+                    icon="folder_open",
+                    on_click=lambda: load_db_file(session_maker, wr_table),
+                )
+                ui.button("Save", icon="save", on_click=lambda: save_db_file(engine))
+                ui.space()
+                ui.button("New Match", on_click=new_match_dialog.open).classes(
+                    "self-end"
+                )
 
-        ui.run(title="Win Rate Tracker", favicon=tab_icon2)
+            wr_table(session_maker)
+
+    with ui.footer(value=True).classes("py-1 bg-gray-800 text-white justify-center"):
+        ui.label("© 2026 Vittorio Perera").classes("text-xs")
+
+
+ui.run(title="Win Rate Tracker", favicon=TAB_ICON2, native=True)
