@@ -6,6 +6,7 @@ from datetime import datetime
 from random import choice
 
 from sqlalchemy.engine.base import Engine
+from sqlalchemy.orm import sessionmaker
 
 from src.data import ArchetypeData, Event, Game, Match, ResultData
 

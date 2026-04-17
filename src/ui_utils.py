@@ -1,3 +1,7 @@
+"""
+module to draw the main ui elements
+"""
+
 from datetime import datetime
 from typing import Any
 
@@ -7,27 +11,37 @@ from src.assets.icons import play_icon
 from src.data import ArchetypeData, Game, GameResult, Match
 from src.utils import get_archetype_results, get_archetypes, toggle_emoji
 
-# pylint: disable=protected-access
-# we need to access the ._classes attribute of many UI elements either to check their state or to
-# change their values
 
-
-class GameResultButtonPair:
+class ResultRow:
     """
-    Class to quickly access the state of a pair of button used to enter the result of a game
+    One row, in the game grid
     """
 
-    def __init__(self, win_button, loss_button):
-        self.win = win_button
-        self.loss = loss_button
+    def __init__(self, row_label: str):
+        ui.label(row_label).classes("text-2xl -mt-3")
+        self.otp_checkbox = ui.checkbox().classes("text-3xl -mt-3")
+        self.win_button = ui.label("🙂").classes(
+            "text-3xl cursor-pointer transition-all grayscale opacity-50 -mt-3"
+        )
+        self.loss_button = ui.label("🙁").classes(
+            "text-3xl cursor-pointer transition-all grayscale opacity-50 -mt-3"
+        )
+        self.win_button.on(
+            "click",
+            lambda: toggle_emoji(self.win_button, self.loss_button),
+        )
+        self.loss_button.on(
+            "click",
+            lambda: toggle_emoji(self.loss_button, self.win_button),
+        )
 
     @property
     def is_set(self) -> bool:
         """
         Check if one of the two button was set
         """
-        return ("grayscale" not in self.win._classes) or (
-            "grayscale" not in self.loss._classes
+        return ("grayscale" not in self.win_button.classes) or (
+            "grayscale" not in self.loss_button.classes
         )
 
     @property
@@ -40,10 +54,20 @@ class GameResultButtonPair:
         if not self.is_set:
             return GameResult.UNSET
 
-        if "grayscale" not in self.win._classes:
+        if "grayscale" not in self.win_button.classes:
             return GameResult.WIN
 
         return GameResult.LOSS
+
+    def reset(self):
+        """
+        Reset the row, set the buttons to greyscale and the checkbox to un-marked
+        """
+        if "grayscale" not in self.win_button.classes:
+            self.win_button.classes("grayscale opacity-50")
+        if "grayscale" not in self.loss_button.classes:
+            self.loss_button.classes("grayscale opacity-50")
+        self.otp_checkbox.set_value(False)
 
 
 # The class needs to have many attributes as each refers to a ui element
@@ -53,21 +77,31 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
     elements of the ui
     """
 
-    def __init__(self, LocalSession):
+    def __init__(self, session_maker):
         super().__init__()
-        self.LocalSession = LocalSession
+        self.session_maker = session_maker
+
+        # Set p-0 for a tight layout
         with self, ui.card().classes("p-0"):
+
+            # Add a close button to the top right of the dialog box
             with ui.row().classes("items-center justify-end w-full"):
                 ui.button(icon="close", on_click=self.close_and_reset).props(
                     "flat round dense"
                 )
+
+            # Initial row with the dialog title as a label
             with ui.row().classes("w-full items-center justify-between px-8 -mt-4"):
                 ui.label("Enter Result").classes("text-h6")
+
+            # Second row to with an auto-complete text input to add the archetype value
             with ui.row().classes("px-8"):
                 self.archetype_input = ui.input(
-                    label="Archetype", autocomplete=get_archetypes(self.LocalSession)
+                    label="Archetype", autocomplete=get_archetypes(self.session_maker)
                 )
 
+            # A 4x4 Grid to enter the match result. A first row to set up the table and three
+            # additional rows one for each game.
             with ui.grid(columns=4).classes("items-center justify-items-center px-8"):
 
                 # Row 1 - just the 'on the play' icon and 3 placeholders
@@ -78,77 +112,38 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
                 ui.label("")
                 ui.label("")
 
-                # Row 2 - game 1
-                ui.label("G1").classes("text-2xl -mt-3")
-                self.checkbox1 = ui.checkbox().classes("text-3xl -mt-3")
-                self.g1_win = ui.label("🙂").classes(
-                    "text-3xl cursor-pointer transition-all grayscale opacity-50 -mt-3"
-                )
-                self.g1_loss = ui.label("🙁").classes(
-                    "text-3xl cursor-pointer transition-all grayscale opacity-50 -mt-3"
-                )
-                self.g1_win.on("click", lambda: toggle_emoji(self.g1_win, self.g1_loss))
-                self.g1_loss.on(
-                    "click", lambda: toggle_emoji(self.g1_loss, self.g1_win)
-                )
+                # Remaining rows
+                g1_row = ResultRow("G1")
+                g2_row = ResultRow("G2")
+                g3_row = ResultRow("G3")
 
-                # Row 3 - game 2
-                ui.label("G2").classes("text-2xl")
-                self.checkbox2 = ui.checkbox().classes("text-3xl")
-                self.g2_win = ui.label("🙂").classes(
-                    "text-3xl cursor-pointer transition-all grayscale opacity-50"
-                )
-                self.g2_loss = ui.label("🙁").classes(
-                    "text-3xl cursor-pointer transition-all grayscale opacity-50"
-                )
-                self.g2_win.on("click", lambda: toggle_emoji(self.g2_win, self.g2_loss))
-                self.g2_loss.on(
-                    "click", lambda: toggle_emoji(self.g2_loss, self.g2_win)
-                )
+                self.game_rows = [g1_row, g2_row, g3_row]
 
-                # Row 4 - game 3
-                ui.label("G3").classes("text-2xl")
-                self.checkbox3 = ui.checkbox().classes("text-3xl")
-                self.g3_win = ui.label("🙂").classes(
-                    "text-3xl cursor-pointer transition-all grayscale opacity-50"
-                )
-                self.g3_loss = ui.label("🙁").classes(
-                    "text-3xl cursor-pointer transition-all grayscale opacity-50"
-                )
-                self.g3_win.on("click", lambda: toggle_emoji(self.g3_win, self.g3_loss))
-                self.g3_loss.on(
-                    "click", lambda: toggle_emoji(self.g3_loss, self.g3_win)
-                )
-
+            # One more row with a button to record the match result
             with ui.row().classes("w-full justify-center"):
                 ui.button("Record", on_click=self.record)
 
+            # Last row with a checkbox to track match losses (e.g., time out on mtgo)
             ui.label("")
             with ui.row().classes("justify-end items-center gap-2 w-full"):
                 ui.label("Match loss")
                 self.match_loss_cb = ui.checkbox()
 
-    def _validate(self) -> bool:
+    def _validate_result_rows_state(self) -> bool:
         """
-        Validate the input dialg state. if valid return True else False
+        Helper function to take the three ResultRow and make sure they are set correctly (e.g.,
+        we cannot have the first and third set but not the second)
         """
-        validation = True
 
-        # Check if the archetype was entered
-        if self.archetype_input.value == "":
-            ui.notify("Missing Archetype!", type="warning")
-            validation = False
-
-        # Check if all games are set properly
-        g1 = GameResultButtonPair(self.g1_win, self.g1_loss)
-        g2 = GameResultButtonPair(self.g2_win, self.g2_loss)
-        g3 = GameResultButtonPair(self.g3_win, self.g3_loss)
         valid_game_states = [[1, 0, 0], [1, 1, 0], [1, 1, 1]]
-        if [g1.is_set, g2.is_set, g3.is_set] not in valid_game_states:
-            ui.notify("Missing game result(s)!", type="warning")
-            validation = False
+        return [row.is_set for row in self.game_rows] in valid_game_states
 
-        # Check if the game result is valid (e.g. 2-1 is valid but 0-3 is not)
+    def _validate_result_rows_value(self) -> bool:
+        """
+        Helper function to check the three ResultRow provide a valid result (e.g. a match can be
+        won 2-0 but cannot be lost 0-3)
+        """
+
         valid_game_results = [
             [1, -1, 1],
             [-1, 1, 1],
@@ -161,8 +156,24 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
             [1, -1, 0],
             [-1, 1, 0],
         ]
-        actual_result = [g1.result.value, g2.result.value, g3.result.value]
-        if actual_result not in valid_game_results:
+        return [row.result.value for row in self.game_rows] in valid_game_results
+
+    def _validate(self) -> bool:
+        """
+        Validate the input dialg state. If valid return True else False
+        """
+        validation = True
+
+        # Check if the archetype was entered
+        if self.archetype_input.value == "":
+            ui.notify("Missing Archetype!", type="warning")
+            validation = False
+
+        if not self._validate_result_rows_state():
+            ui.notify("Missing game result(s)!", type="warning")
+            validation = False
+
+        if not self._validate_result_rows_value():
             ui.notify("Invalid Result", type="warning")
             validation = False
 
@@ -178,24 +189,14 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
         if not validation:
             return
 
-        games_to_record = []
-        g1 = GameResultButtonPair(self.g1_win, self.g1_loss)
-        if g1.is_set:
-            games_to_record.append(
-                Game(on_the_play=self.checkbox1.value, win=g1.result.value == 1)
+        games_to_record = [
+            Game(
+                on_the_play=row.otp_checkbox.value,
+                win=row.result.value == 1,
             )
-
-        g2 = GameResultButtonPair(self.g2_win, self.g2_loss)
-        if g2.is_set:
-            games_to_record.append(
-                Game(on_the_play=self.checkbox2.value, win=g2.result.value == 1)
-            )
-
-        g3 = GameResultButtonPair(self.g3_win, self.g3_loss)
-        if g3.is_set:
-            games_to_record.append(
-                Game(on_the_play=self.checkbox3.value, win=g3.result.value == 1)
-            )
+            for row in self.game_rows
+            if row.is_set
+        ]
 
         new_match = Match(
             archetype=self.archetype_input.value.lower(),
@@ -204,14 +205,13 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
             games=games_to_record,
         )
 
-        with self.LocalSession() as session:
+        with self.session_maker() as session:
             session.add(new_match)
             session.commit()
 
-        self.archetype_input.set_autocomplete(get_archetypes(self.LocalSession))
+        self.archetype_input.set_autocomplete(get_archetypes(self.session_maker))
         wr_table.refresh()
 
-        # dump data
         self.reset_dialog()
         self.close()
 
@@ -220,23 +220,10 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
         Called before closing the dialog takes care of resetting each element to the initial state
         """
 
-        if "grayscale" not in self.g1_win._classes:
-            self.g1_win.classes("grayscale opacity-50")
-        if "grayscale" not in self.g1_loss._classes:
-            self.g1_loss.classes("grayscale opacity-50")
-        if "grayscale" not in self.g2_win._classes:
-            self.g2_win.classes("grayscale opacity-50")
-        if "grayscale" not in self.g2_loss._classes:
-            self.g2_loss.classes("grayscale opacity-50")
-        if "grayscale" not in self.g3_win._classes:
-            self.g3_win.classes("grayscale opacity-50")
-        if "grayscale" not in self.g3_loss._classes:
-            self.g3_loss.classes("grayscale opacity-50")
+        for row in self.game_rows:
+            row.reset()
 
         self.archetype_input.set_value("")
-        self.checkbox1.set_value(False)
-        self.checkbox2.set_value(False)
-        self.checkbox3.set_value(False)
 
     def close_and_reset(self):
         """

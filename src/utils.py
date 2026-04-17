@@ -58,23 +58,23 @@ def get_wins(matches: Sequence[Match]) -> int:
     return len([m for m in matches if is_match_won(m)])
 
 
-def get_archetypes(Session) -> Sequence[str]:
+def get_archetypes(session_maker) -> Sequence[str]:
     """
     Query the DB for all the archetypes for which a match was recorded
     """
-    with Session() as session:
+    with session_maker() as session:
         statement = select(Match.archetype).distinct()
         autocomplete_options = session.execute(statement).scalars().all()
     return autocomplete_options
 
 
-def get_archetype_results(Session, archetype) -> ArchetypeData:
+def get_archetype_results(session_maker, archetype) -> ArchetypeData:
     """
     Given a specific archetype (i.e. a label) query the database for the results record and pack
     them nicely in the appropriate dataclass
     """
 
-    with Session() as session:
+    with session_maker() as session:
         # match results query
         match_statement = (
             select(Match)
@@ -123,7 +123,10 @@ def get_archetype_results(Session, archetype) -> ArchetypeData:
     )
 
 
-async def native_save(current_engine):
+async def save_db_file(engine):
+    """
+    Save the current DB to file
+    """
     if app.native.main_window:
         file_path = await app.native.main_window.create_file_dialog(
             dialog_type=FileDialog.SAVE,
@@ -135,31 +138,34 @@ async def native_save(current_engine):
                 file_path[0] if isinstance(file_path, (list, tuple)) else file_path
             )
 
-            raw_con = current_engine.raw_connection()
-
-            # Create a new connection to the destination file
+            # Create a new connection to the destination and use backup to save
+            raw_con = engine.raw_connection()
             dest_con = sqlite3.connect(final_path)
-
-            # Use the backup API to copy everything
             with dest_con:
                 raw_con.connection.backup(dest_con)
-
             dest_con.close()
+
             ui.notify(f"Saved to {final_path}")
         else:
+            # We shouldn't ever get here
             raise ValueError("No file path")
 
 
-async def load_db_file(session, generate_wr_table):
+async def load_db_file(session, wr_table):
+    """
+    Load an existing db and refresh the table
+    """
     if app.native.main_window:
         file_path = await app.native.main_window.create_file_dialog(
             dialog_type=FileDialog.OPEN,
             file_types=("Database Files (*.db)", "All files (*.*)"),
             save_filename="matches.db",
         )
+
+        # Create a new engine and bind the session to it
         engine = create_engine(f"sqlite:///{file_path[0]}")
         Event.metadata.create_all(engine)
         session.configure(bind=engine)
-        generate_wr_table.refresh()
-        print(file_path)
+        wr_table.refresh()
+        ui.notify(f"Loaded from {file_path[0]}")
     return
