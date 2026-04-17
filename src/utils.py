@@ -162,10 +162,11 @@ async def load_db_file(session, wr_table):
             save_filename="matches.db",
         )
 
-        # Create a new engine and bind the session to it
-        engine = create_engine(f"sqlite:///{file_path[0]}")
-        Event.metadata.create_all(engine)
-        session.configure(bind=engine)
-        wr_table.refresh()
-        ui.notify(f"Loaded from {file_path[0]}")
+        if file_path:
+            # Create a new engine and bind the session to it
+            engine = create_engine(f"sqlite:///{file_path[0]}")
+            Event.metadata.create_all(engine)
+            session.configure(bind=engine)
+            wr_table.refresh()
+            ui.notify(f"Loaded from {file_path[0]}")
     return
