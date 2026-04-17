@@ -2,47 +2,15 @@
 Utility function for the main ui
 """
 
-from datetime import datetime
-from random import choice
+import sqlite3
 from typing import Sequence
 
-from sqlalchemy.engine.base import Engine
+from nicegui import app, ui
 from sqlalchemy.orm import selectinload
-from sqlmodel import Session, select
+from sqlmodel import create_engine, select
+from webview import FileDialog
 
 from src.data import ArchetypeData, Event, Game, Match, ResultData
-
-
-def generate_data(engine: Engine, events: int, matches_per_event: int) -> None:
-    """
-    Generate some random data (i.e., match results) for testing.
-    """
-
-    match_results = [[1, 1], [1, 0, 1], [0, 1, 1], [0, 0], [0, 1, 0], [1, 0, 0]]
-    decks = ["boros", "jeskay blink", "esper Blink", "titan"]
-
-    with Session(engine) as session:
-        for i in range(events):
-            matches = []
-            for _ in range(matches_per_event):
-                deck = choice(decks)
-                result = choice(match_results)
-                games = []
-                for elem in result:
-                    games.append(
-                        Game(on_the_play=choice([True, False]), win=bool(elem))
-                    )
-                matches.append(
-                    Match(
-                        archetype=deck,
-                        date=datetime.now().isoformat(),
-                        is_match_loss=False,
-                        games=games,
-                    )
-                )
-            event = Event(name=f"League_{i+1}", event_type="MTGO", matches=matches)
-            session.add(event)
-        session.commit()
 
 
 def toggle_emoji(button1, button2) -> None:
@@ -90,55 +58,62 @@ def get_wins(matches: Sequence[Match]) -> int:
     return len([m for m in matches if is_match_won(m)])
 
 
-def get_archetypes(session) -> Sequence[str]:
+def get_archetypes(Session) -> Sequence[str]:
     """
     Query the DB for all the archetypes for which a match was recorded
     """
-
-    statement = select(Match.archetype).distinct()
-    autocomplete_options = session.exec(statement).all()
+    with Session() as session:
+        statement = select(Match.archetype).distinct()
+        autocomplete_options = session.execute(statement).scalars().all()
     return autocomplete_options
 
 
-def get_archetype_results(session, archetype) -> ArchetypeData:
+def get_archetype_results(Session, archetype) -> ArchetypeData:
     """
     Given a specific archetype (i.e. a label) query the database for the results record and pack
     them nicely in the appropriate dataclass
     """
 
-    # match results query
-    match_statement = (
-        select(Match)
-        .where(Match.archetype == archetype)
-        .options(selectinload(Match.games))  # type: ignore
-    )
-    match_query_result = session.exec(match_statement).unique().all()
-    match_data = ResultData(
-        played=len(match_query_result), won=get_wins(match_query_result)
-    )
+    with Session() as session:
+        # match results query
+        match_statement = (
+            select(Match)
+            .where(Match.archetype == archetype)
+            .options(selectinload(Match.games))  # type: ignore
+        )
+        match_query_result = session.execute(match_statement).unique().scalars().all()
+        match_data = ResultData(
+            played=len(match_query_result), won=get_wins(match_query_result)
+        )
 
-    # game results query
-    game_statement = (
-        select(Game).join(Match).where(Match.archetype == archetype).distinct()
-    )
-    game_query_result = session.exec(game_statement).all()
+        # game results query
+        game_statement = (
+            select(Game).join(Match).where(Match.archetype == archetype).distinct()
+        )
+        game_query_result = session.execute(game_statement).scalars().all()
 
-    game_data = ResultData(
-        played=len(game_query_result),
-        won=len([game for game in game_query_result if game.win]),
-    )
+        game_data = ResultData(
+            played=len(game_query_result),
+            won=len([game for game in game_query_result if game.win]),
+        )
 
-    otp_game_data = ResultData(
-        played=len([game for game in game_query_result if game.on_the_play]),
-        won=len([game for game in game_query_result if game.on_the_play and game.win]),
-    )
+        otp_game_data = ResultData(
+            played=len([game for game in game_query_result if game.on_the_play]),
+            won=len(
+                [game for game in game_query_result if game.on_the_play and game.win]
+            ),
+        )
 
-    otd_game_data = ResultData(
-        played=len([game for game in game_query_result if not game.on_the_play]),
-        won=len(
-            [game for game in game_query_result if not game.on_the_play and game.win]
-        ),
-    )
+        otd_game_data = ResultData(
+            played=len([game for game in game_query_result if not game.on_the_play]),
+            won=len(
+                [
+                    game
+                    for game in game_query_result
+                    if not game.on_the_play and game.win
+                ]
+            ),
+        )
 
     return ArchetypeData(
         matches=match_data,
@@ -146,3 +121,45 @@ def get_archetype_results(session, archetype) -> ArchetypeData:
         otp_games=otp_game_data,
         otd_games=otd_game_data,
     )
+
+
+async def native_save(current_engine):
+    if app.native.main_window:
+        file_path = await app.native.main_window.create_file_dialog(
+            dialog_type=FileDialog.SAVE,
+            file_types=("Database Files (*.db)", "All files (*.*)"),
+            save_filename="matches.db",
+        )
+        if file_path:
+            final_path = (
+                file_path[0] if isinstance(file_path, (list, tuple)) else file_path
+            )
+
+            raw_con = current_engine.raw_connection()
+
+            # Create a new connection to the destination file
+            dest_con = sqlite3.connect(final_path)
+
+            # Use the backup API to copy everything
+            with dest_con:
+                raw_con.connection.backup(dest_con)
+
+            dest_con.close()
+            ui.notify(f"Saved to {final_path}")
+        else:
+            raise ValueError("No file path")
+
+
+async def load_db_file(session, generate_wr_table):
+    if app.native.main_window:
+        file_path = await app.native.main_window.create_file_dialog(
+            dialog_type=FileDialog.OPEN,
+            file_types=("Database Files (*.db)", "All files (*.*)"),
+            save_filename="matches.db",
+        )
+        engine = create_engine(f"sqlite:///{file_path[0]}")
+        Event.metadata.create_all(engine)
+        session.configure(bind=engine)
+        generate_wr_table.refresh()
+        print(file_path)
+    return
