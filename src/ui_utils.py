@@ -7,7 +7,7 @@ from typing import Any
 
 from nicegui import ui
 
-from src.assets.icons import play_icon
+from src.assets.icons import PLAY_ICON
 from src.data import ArchetypeData, Game, GameResult, Match
 from src.utils import get_archetype_results, get_archetypes, toggle_emoji
 
@@ -106,7 +106,7 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
 
                 # Row 1 - just the 'on the play' icon and 3 placeholders
                 ui.label("")
-                ui.html(play_icon, sanitize=False).classes("text-3xl").tooltip(
+                ui.html(PLAY_ICON, sanitize=False).classes("text-3xl").tooltip(
                     '"On the play" checkbox'
                 )
                 ui.label("")

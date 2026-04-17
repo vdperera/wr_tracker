@@ -7,7 +7,7 @@ from nicegui import Client, ui
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import create_engine
 
-from src.assets.icons import tab_icon2
+from src.assets.icons import TAB_ICON2
 from src.data import Event
 from src.ui_utils import NewMatchDialog, wr_table
 from src.utils import load_db_file, save_db_file
@@ -54,4 +54,4 @@ def main_page(client: Client):
         ui.label("© 2026 Vittorio Perera").classes("text-xs")
 
 
-ui.run(title="Win Rate Tracker", favicon=tab_icon2, native=True)
+ui.run(title="Win Rate Tracker", favicon=TAB_ICON2, native=True)

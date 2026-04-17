@@ -2,7 +2,7 @@
 A collection of svg icons
 """
 
-play_icon: str = """
+PLAY_ICON: str = """
 <svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg" 
      style="width: 1em; height: 1em; display: inline-block; vertical-align: middle;">
   <g transform="translate(52,20) rotate(8)">
@@ -16,7 +16,7 @@ play_icon: str = """
 """
 
 
-tab_icon: str = """
+TAB_ICON: str = """
 <svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
   <!-- Back card -->
   <g transform="translate(56,18) rotate(8)">
@@ -47,7 +47,7 @@ tab_icon: str = """
 </svg>
 """
 
-tab_icon2: str = """
+TAB_ICON2: str = """
 <svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
   <!-- Back card 1 -->
   <g transform="translate(56,16) rotate(10)">
