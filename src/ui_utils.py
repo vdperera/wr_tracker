@@ -8,8 +8,14 @@ from typing import Any
 from nicegui import ui
 
 from src.assets.icons import PLAY_ICON
-from src.data import ArchetypeData, Game, GameResult, Match
-from src.utils import get_archetype_results, get_archetypes, toggle_emoji
+from src.data import ArchetypeData, Event, Game, GameResult, Match
+from src.utils import (
+    get_archetype_results,
+    get_archetypes,
+    get_event_types,
+    get_events,
+    toggle_emoji,
+)
 
 
 class ResultRow:
@@ -95,10 +101,8 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
                 ui.label("Enter Result").classes("text-h6")
 
             # Second row to with an auto-complete text input to add the archetype value
-            with ui.row().classes("px-8"):
-                self.archetype_input = ui.input(
-                    label="Archetype", autocomplete=get_archetypes(self.session_maker)
-                )
+            with ui.row().classes("px-8") as self.archetype_row:
+                self._build_archetype_input()
 
             # A 4x4 Grid to enter the match result. A first row to set up the table and three
             # additional rows one for each game.
@@ -209,11 +213,19 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
             session.add(new_match)
             session.commit()
 
-        self.archetype_input.set_autocomplete(get_archetypes(self.session_maker))
         wr_table.refresh()
 
         self.reset_dialog()
         self.close()
+
+    def _build_archetype_input(self):
+        """
+        Create the archetype input. Called on init and on reset: recreating the element (rather
+        than clearing its value) avoids a stale value lingering client-side
+        """
+        self.archetype_input = ui.input(
+            label="Archetype", autocomplete=get_archetypes(self.session_maker)
+        )
 
     def reset_dialog(self):
         """
@@ -223,7 +235,84 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
         for row in self.game_rows:
             row.reset()
 
-        self.archetype_input.set_value("")
+        self.archetype_row.clear()
+        with self.archetype_row:
+            self._build_archetype_input()
+
+    def close_and_reset(self):
+        """
+        Properly closes the dialog window
+        """
+        self.reset_dialog()
+        self.close()
+
+
+class NewEventDialog(ui.dialog):
+    """
+    A class for the dialog window used to enter a new event
+    """
+
+    def __init__(self, session_maker):
+        super().__init__()
+        self.session_maker = session_maker
+
+        # Set p-0 for a tight layout
+        with self, ui.card().classes("p-0"):
+
+            # Add a close button to the top right of the dialog box
+            with ui.row().classes("items-center justify-end w-full"):
+                ui.button(icon="close", on_click=self.close_and_reset).props(
+                    "flat round dense"
+                )
+
+            # Initial row with the dialog title as a label
+            with ui.row().classes("w-full items-center justify-between px-8 -mt-4"):
+                ui.label("Create Event").classes("text-h6")
+
+            # Text fields to enter the event name and event type
+            with ui.column().classes("px-8") as self.form_column:
+                self._build_inputs()
+
+            # A row with a button to record the new event
+            with ui.row().classes("w-full justify-center pb-4"):
+                ui.button("Create", on_click=self.create)
+
+    def _build_inputs(self):
+        """
+        Create the name and event type inputs. Called on init and on reset: recreating the
+        elements (rather than clearing their value) avoids a stale value lingering client-side
+        """
+        self.name_input = ui.input(label="Name")
+        self.event_type_input = ui.input(
+            label="Event Type", autocomplete=get_event_types(self.session_maker)
+        )
+
+    def create(self):
+        """
+        Add the new event to the database
+        """
+
+        new_event = Event(
+            name=self.name_input.value,
+            event_type=self.event_type_input.value,
+        )
+
+        with self.session_maker() as session:
+            session.add(new_event)
+            session.commit()
+
+        generate_event_list.refresh()
+
+        self.reset_dialog()
+        self.close()
+
+    def reset_dialog(self):
+        """
+        Reset the dialog inputs to their initial state
+        """
+        self.form_column.clear()
+        with self.form_column:
+            self._build_inputs()
 
     def close_and_reset(self):
         """
@@ -354,47 +443,31 @@ def wr_table(session) -> None:
     )
 
 
-DATA_SOURCE = [
-    {
-        "title": "Project Alpha",
-        "sub_rows": [
-            "Task 1: Requirements Gathering",
-            "Task 2: Architecture Design",
-            "Task 3: Prototype Build",
-        ],
-    },
-    {
-        "title": "Project Beta",
-        "sub_rows": ["Task 1: Database Setup", "Task 2: API Integration"],
-    },
-    {
-        "title": "Project Gamma",
-        "sub_rows": [
-            "Task 1: UI Polish",
-            "Task 2: QA Testing",
-            "Task 3: Deployment",
-            "Task 4: User Feedback",
-            "Task 5: Documentation",
-        ],
-    },
-]
-
-
-def generate_event_list():
-    """Generates the rows and their indented sub-rows."""
+@ui.refreshable
+def generate_event_list(session_maker):
+    """Generates a row, with an empty sub-row section, for each Event in the database."""
     with ui.column().classes("w-full gap-1"):
-        for item in DATA_SOURCE:
-            # ui.expansion acts as the clickable parent row
-            # 'classes' strips default styles to make it look like a clean row
-            with ui.expansion(text=item["title"]).classes(
-                "w-full border-b border-gray-200 text-lg font-medium"
-            ):
+        for event in get_events(session_maker):
+            sub_rows: list[str] = []
 
-                # Container for sub-rows with left padding (pl-8) for indentation
-                with ui.column().classes("w-full pl-8 pb-2 gap-1 bg-gray-50"):
-                    for sub_item in item["sub_rows"]:
-                        # Individual sub-rows
-                        with ui.row().classes(
-                            "w-full p-2 border-b border-gray-100 last:border-none"
-                        ):
-                            ui.label(sub_item).classes("text-sm text-gray-600")
+            if sub_rows:
+                # ui.expansion acts as the clickable parent row
+                # 'classes' strips default styles to make it look like a clean row
+                with ui.expansion(text=event.name).classes(
+                    "w-full border-b border-gray-200 text-lg font-medium"
+                ):
+
+                    # Container for sub-rows with left padding (pl-8) for indentation
+                    with ui.column().classes("w-full pl-8 pb-2 gap-1 bg-gray-50"):
+                        for sub_row in sub_rows:
+                            with ui.row().classes(
+                                "w-full p-2 border-b border-gray-100 last:border-none"
+                            ):
+                                ui.label(sub_row).classes("text-sm text-gray-600")
+            else:
+                # No sub-rows yet, use a plain (non-toggleable) row so there is nothing to
+                # expand/collapse and the row doesn't shift on click
+                with ui.row().classes(
+                    "w-full items-center border-b border-gray-200 text-lg font-medium p-3"
+                ):
+                    ui.label(event.name)

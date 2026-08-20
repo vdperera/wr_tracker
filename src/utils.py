@@ -58,6 +58,26 @@ def get_wins(matches: Sequence[Match]) -> int:
     return len([m for m in matches if is_match_won(m)])
 
 
+def get_event_types(session_maker) -> Sequence[str]:
+    """
+    Query the DB for all the event types for which an event was recorded
+    """
+    with session_maker() as session:
+        statement = select(Event.event_type).distinct()
+        autocomplete_options = session.execute(statement).scalars().all()
+    return autocomplete_options
+
+
+def get_events(session_maker) -> Sequence[Event]:
+    """
+    Query the DB for all the recorded events
+    """
+    with session_maker() as session:
+        statement = select(Event)
+        events = session.execute(statement).scalars().all()
+    return events
+
+
 def get_archetypes(session_maker) -> Sequence[str]:
     """
     Query the DB for all the archetypes for which a match was recorded
@@ -151,9 +171,10 @@ async def save_db_file(engine):
             raise ValueError("No file path")
 
 
-async def load_db_file(session, wr_table):
+async def load_db_file(session, *refreshables):
     """
-    Load an existing db and refresh the table
+    Load an existing db and refresh the given refreshable elements (e.g. wr_table,
+    generate_event_list)
     """
     if app.native.main_window:
         file_path = await app.native.main_window.create_file_dialog(
@@ -167,6 +188,7 @@ async def load_db_file(session, wr_table):
             engine = create_engine(f"sqlite:///{file_path[0]}")
             Event.metadata.create_all(engine)
             session.configure(bind=engine)
-            wr_table.refresh()
+            for refreshable in refreshables:
+                refreshable.refresh()
             ui.notify(f"Loaded from {file_path[0]}")
     return

@@ -85,3 +85,12 @@ TAB_ICON2: str = """
   </g>
 </svg>
 """
+
+TROPHY_ICON: str = """
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <g transform="translate(16,16) scale(4)">
+    <path fill="#000000"
+          d="M7 4V2h10v2h5v3c0 2.76-1.86 5.15-4.5 5.87A6.98 6.98 0 0 1 13 17.93V20h4v2H7v-2h4v-2.07a6.98 6.98 0 0 1-4.5-6.06A6.007 6.007 0 0 1 2 7V4h5zm-3 3c0 1.86 1.28 3.41 3 3.86V6H4v1zm13 3.86c1.72-.45 3-2 3-3.86V6h-3v4.86z"/>
+  </g>
+</svg>
+"""
