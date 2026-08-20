@@ -327,8 +327,7 @@ def wr_table(session) -> None:
     )
 
     # CSS needed to style (bold and sticky) the first and last rows
-    ui.add_head_html(
-        """
+    ui.add_head_html("""
         <style>
             /* Sticky Header */
             .sticky-table thead tr:first-child th {
@@ -347,10 +346,55 @@ def wr_table(session) -> None:
                 border-top: 2px solid #ddd;
             }
         </style>
-    """
-    )
+    """)
 
     # Add the table element to the UI
     ui.table(columns=columns, rows=rows, row_key="name").classes(
         "sticky-table w-full flex-grow overflow-auto"
     )
+
+
+DATA_SOURCE = [
+    {
+        "title": "Project Alpha",
+        "sub_rows": [
+            "Task 1: Requirements Gathering",
+            "Task 2: Architecture Design",
+            "Task 3: Prototype Build",
+        ],
+    },
+    {
+        "title": "Project Beta",
+        "sub_rows": ["Task 1: Database Setup", "Task 2: API Integration"],
+    },
+    {
+        "title": "Project Gamma",
+        "sub_rows": [
+            "Task 1: UI Polish",
+            "Task 2: QA Testing",
+            "Task 3: Deployment",
+            "Task 4: User Feedback",
+            "Task 5: Documentation",
+        ],
+    },
+]
+
+
+def generate_event_list():
+    """Generates the rows and their indented sub-rows."""
+    with ui.column().classes("w-full gap-1"):
+        for item in DATA_SOURCE:
+            # ui.expansion acts as the clickable parent row
+            # 'classes' strips default styles to make it look like a clean row
+            with ui.expansion(text=item["title"]).classes(
+                "w-full border-b border-gray-200 text-lg font-medium"
+            ):
+
+                # Container for sub-rows with left padding (pl-8) for indentation
+                with ui.column().classes("w-full pl-8 pb-2 gap-1 bg-gray-50"):
+                    for sub_item in item["sub_rows"]:
+                        # Individual sub-rows
+                        with ui.row().classes(
+                            "w-full p-2 border-b border-gray-100 last:border-none"
+                        ):
+                            ui.label(sub_item).classes("text-sm text-gray-600")
