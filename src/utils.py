@@ -78,6 +78,31 @@ def get_events(session_maker) -> Sequence[Event]:
     return events
 
 
+def get_active_events(session_maker) -> Sequence[Event]:
+    """
+    Query the DB for all active events, ordered from most to least recently created
+    """
+    with session_maker() as session:
+        statement = (
+            select(Event)
+            .where(Event.active.is_(True))
+            .order_by(Event.created_at.desc())
+        )
+        events = session.execute(statement).scalars().all()
+    return events
+
+
+def set_event_active(session_maker, event_id: int, active: bool) -> None:
+    """
+    Update the active flag for a given event
+    """
+    with session_maker() as session:
+        event = session.get(Event, event_id)
+        event.active = active
+        session.add(event)
+        session.commit()
+
+
 def get_archetypes(session_maker) -> Sequence[str]:
     """
     Query the DB for all the archetypes for which a match was recorded

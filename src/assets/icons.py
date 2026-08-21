@@ -94,3 +94,19 @@ TROPHY_ICON: str = """
   </g>
 </svg>
 """
+
+LOCK_OPEN_ICON: str = """
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"
+     style="width: 1em; height: 1em; display: inline-block; vertical-align: middle;">
+  <path fill="currentColor"
+        d="M12 17a2 2 0 0 0 2-2c0-1.1-.9-2-2-2a2 2 0 0 0-2 2c0 1.1.9 2 2 2zm6-9h-1V6c0-2.76-2.24-5-5-5-2.28 0-4.27 1.54-4.84 3.75-.14.54.18 1.08.72 1.22.53.14 1.08-.18 1.22-.72C9.44 3.93 10.63 3 12 3c1.65 0 3 1.35 3 3v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2z"/>
+</svg>
+"""
+
+LOCK_CLOSED_ICON: str = """
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"
+     style="width: 1em; height: 1em; display: inline-block; vertical-align: middle;">
+  <path fill="currentColor"
+        d="M12 17a2 2 0 0 0 2-2c0-1.1-.9-2-2-2a2 2 0 0 0-2 2c0 1.1.9 2 2 2zm6-9h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM8.9 6c0-1.71 1.39-3.1 3.1-3.1s3.1 1.39 3.1 3.1v2H8.9V6z"/>
+</svg>
+"""

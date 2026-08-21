@@ -51,6 +51,11 @@ def main_page(client: Client):
         padding: 0.5vw !important;
         min-height: 40px !important;
     }
+    /* The dropdown caret centers on the whole field (label + value), which sits visibly
+       above the value text once the label floats up. Nudge it down to the value's center. */
+    .event-select .q-field__marginal {
+        transform: translateY(8px);
+    }
 </style>
 """)
 

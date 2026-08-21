@@ -7,13 +7,15 @@ from typing import Any
 
 from nicegui import ui
 
-from src.assets.icons import PLAY_ICON
+from src.assets.icons import LOCK_CLOSED_ICON, LOCK_OPEN_ICON, PLAY_ICON
 from src.data import ArchetypeData, Event, Game, GameResult, Match
 from src.utils import (
+    get_active_events,
     get_archetype_results,
     get_archetypes,
     get_event_types,
     get_events,
+    set_event_active,
     toggle_emoji,
 )
 
@@ -83,6 +85,9 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
     elements of the ui
     """
 
+    # Sentinel option value for "no event" - 0 is safe since SQLite autoincrement ids start at 1
+    NO_EVENT_VALUE = 0
+
     def __init__(self, session_maker):
         super().__init__()
         self.session_maker = session_maker
@@ -103,6 +108,10 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
             # Second row to with an auto-complete text input to add the archetype value
             with ui.row().classes("px-8") as self.archetype_row:
                 self._build_archetype_input()
+
+            # Row with a dropdown to tie the match to one of the currently active events
+            with ui.row().classes("px-8") as self.event_row:
+                self._build_event_select()
 
             # A 4x4 Grid to enter the match result. A first row to set up the table and three
             # additional rows one for each game.
@@ -206,6 +215,7 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
             archetype=self.archetype_input.value.lower(),
             date=datetime.now().isoformat(),
             is_match_loss=self.match_loss_cb.value,
+            event_id=self.event_select.value or None,
             games=games_to_record,
         )
 
@@ -226,6 +236,33 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
         self.archetype_input = ui.input(
             label="Archetype", autocomplete=get_archetypes(self.session_maker)
         )
+
+    def _build_event_select(self):
+        """
+        Create the event dropdown, populated with the currently active events ordered from most
+        to least recently created, followed by a "No event" option, defaulting to the most
+        recent event. Called on init, on reset and whenever the dialog is opened so the options
+        reflect the latest active events
+        """
+        options = {
+            event.id: event.name
+            for event in get_active_events(self.session_maker)
+        }
+        options[self.NO_EVENT_VALUE] = "No event"
+        self.event_select = ui.select(
+            options=options,
+            value=next(iter(options)),
+            label="Event",
+        ).classes("w-full event-select")
+
+    def open(self):
+        """
+        Refresh the event dropdown, so it reflects the latest active events, before opening
+        """
+        self.event_row.clear()
+        with self.event_row:
+            self._build_event_select()
+        return super().open()
 
     def reset_dialog(self):
         """
@@ -443,6 +480,25 @@ def wr_table(session) -> None:
     )
 
 
+def _toggle_event_active(session_maker, event: Event) -> None:
+    """
+    Flip an event's active flag in the DB and refresh the event list
+    """
+    set_event_active(session_maker, event.id, not event.active)
+    generate_event_list.refresh()
+
+
+def _event_lock_icon(session_maker, event: Event) -> None:
+    """
+    Draw a toggleable lock icon reflecting (and controlling) an event's active flag
+    """
+    icon = LOCK_OPEN_ICON if event.active else LOCK_CLOSED_ICON
+    color = "text-gray-400" if event.active else "text-gray-300"
+    ui.html(icon, sanitize=False).classes(f"text-2xl cursor-pointer {color}").on(
+        "click", lambda: _toggle_event_active(session_maker, event)
+    ).tooltip("Active - click to close" if event.active else "Closed")
+
+
 @ui.refreshable
 def generate_event_list(session_maker):
     """Generates a row, with an empty sub-row section, for each Event in the database."""
@@ -453,21 +509,26 @@ def generate_event_list(session_maker):
             if sub_rows:
                 # ui.expansion acts as the clickable parent row
                 # 'classes' strips default styles to make it look like a clean row
-                with ui.expansion(text=event.name).classes(
-                    "w-full border-b border-gray-200 text-lg font-medium"
+                with ui.row().classes(
+                    "w-full items-center border-b border-gray-200"
                 ):
+                    _event_lock_icon(session_maker, event)
+                    with ui.expansion(text=event.name).classes(
+                        "flex-grow text-lg font-medium"
+                    ):
 
-                    # Container for sub-rows with left padding (pl-8) for indentation
-                    with ui.column().classes("w-full pl-8 pb-2 gap-1 bg-gray-50"):
-                        for sub_row in sub_rows:
-                            with ui.row().classes(
-                                "w-full p-2 border-b border-gray-100 last:border-none"
-                            ):
-                                ui.label(sub_row).classes("text-sm text-gray-600")
+                        # Container for sub-rows with left padding (pl-8) for indentation
+                        with ui.column().classes("w-full pl-8 pb-2 gap-1 bg-gray-50"):
+                            for sub_row in sub_rows:
+                                with ui.row().classes(
+                                    "w-full p-2 border-b border-gray-100 last:border-none"
+                                ):
+                                    ui.label(sub_row).classes("text-sm text-gray-600")
             else:
                 # No sub-rows yet, use a plain (non-toggleable) row so there is nothing to
                 # expand/collapse and the row doesn't shift on click
                 with ui.row().classes(
                     "w-full items-center border-b border-gray-200 text-lg font-medium p-3"
                 ):
+                    _event_lock_icon(session_maker, event)
                     ui.label(event.name)
