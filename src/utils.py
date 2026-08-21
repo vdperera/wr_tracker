@@ -122,7 +122,9 @@ def get_events(session_maker) -> Sequence[Event]:
     Query the DB for all the recorded events, ordered from most to least recently created
     """
     with session_maker() as session:
-        statement = select(Event).order_by(Event.created_at.desc())  # type: ignore
+        statement = select(Event).order_by(
+            Event.created_at.desc()  # type: ignore # pylint: disable=no-member
+        )
         events = session.execute(statement).scalars().all()
     return events
 
@@ -134,8 +136,10 @@ def get_active_events(session_maker) -> Sequence[Event]:
     with session_maker() as session:
         statement = (
             select(Event)
-            .where(Event.active.is_(True))  # type: ignore
-            .order_by(Event.created_at.desc())  # type: ignore
+            .where(Event.active.is_(True))  # type: ignore # pylint: disable=no-member
+            .order_by(
+                Event.created_at.desc()  # type: ignore # pylint: disable=no-member
+            )
         )
         events = session.execute(statement).scalars().all()
     return events
@@ -185,8 +189,10 @@ def deactivate_stale_events(session_maker) -> None:
     with session_maker() as session:
         statement = (
             select(Event)
-            .where(Event.active.is_(True))  # type: ignore
-            .order_by(Event.updated_at.desc())  # type: ignore
+            .where(Event.active.is_(True))  # type: ignore # pylint: disable=no-member
+            .order_by(
+                Event.updated_at.desc()  # type: ignore # pylint: disable=no-member
+            )
         )
         active_events = session.execute(statement).scalars().all()
         for event in active_events[1:]:
