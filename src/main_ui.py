@@ -5,7 +5,7 @@ to insert new data.
 
 import urllib.parse
 
-from nicegui import Client, ui
+from nicegui import Client, app, native, ui
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import create_engine
 
@@ -153,4 +153,12 @@ def main_page(client: Client):
         ui.label("© 2026 Vittorio Perera").classes("text-xs")
 
 
-ui.run(title="", native=True, frameless=True)
+app.native.window_args["maximized"] = True
+
+ui.run(
+    title="",
+    native=True,
+    frameless=True,
+    reload=False,
+    port=native.find_open_port(),
+)
