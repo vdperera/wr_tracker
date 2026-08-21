@@ -5,7 +5,7 @@ module to draw the main ui elements
 from datetime import datetime
 from typing import Any
 
-from nicegui import ui
+from nicegui import app, ui
 
 from src.assets.icons import LOCK_CLOSED_ICON, LOCK_OPEN_ICON, PLAY_ICON
 from src.data import ArchetypeData, Event, Game, GameResult, Match
@@ -17,8 +17,12 @@ from src.utils import (
     get_event_types,
     get_events,
     get_matches_for_event,
+    is_dirty,
+    mark_dirty,
+    save_db_file,
     set_event_active,
     toggle_emoji,
+    touch_event_updated_at,
 )
 
 
@@ -223,8 +227,11 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
 
         with self.session_maker() as session:
             session.add(new_match)
+            if new_match.event_id is not None:
+                touch_event_updated_at(session, new_match.event_id)
             session.commit()
 
+        mark_dirty()
         wr_table.refresh()
         generate_event_list.refresh()
 
@@ -341,6 +348,7 @@ class NewEventDialog(ui.dialog):
             session.add(new_event)
             session.commit()
 
+        mark_dirty()
         generate_event_list.refresh()
 
         self.reset_dialog()
@@ -488,6 +496,7 @@ def _toggle_event_active(session_maker, event: Event) -> None:
     Flip an event's active flag in the DB and refresh the event list
     """
     set_event_active(session_maker, event.id, not event.active)
+    mark_dirty()
     generate_event_list.refresh()
 
 
@@ -561,3 +570,87 @@ def generate_event_list(session_maker):
                     with ui.column().classes("w-full pl-8 pb-2 gap-1 bg-gray-50"):
                         for match in matches:
                             _match_sub_row(match)
+
+
+async def _save_and_quit(session_maker, dialog: ui.dialog) -> None:
+    """
+    Save (which also deactivates stale active events) and, only if that succeeds, close the app
+    """
+    try:
+        await save_db_file(session_maker, generate_event_list)
+    except ValueError:
+        # The user cancelled the native save-file dialog - keep the app open
+        return
+    dialog.close()
+    app.shutdown()
+
+
+def _confirm_quit(session_maker) -> None:
+    """
+    If there are unsaved changes, ask whether to quit, save and quit, or cancel. Otherwise
+    just quit right away
+    """
+    if not is_dirty():
+        app.shutdown()
+        return
+
+    with ui.dialog() as dialog, ui.card():
+        ui.label("You have unsaved changes.")
+        with ui.row().classes("w-full justify-end gap-2"):
+            ui.button("Cancel", on_click=dialog.close).props("flat")
+            ui.button("Quit", on_click=app.shutdown).props("flat")
+            ui.button(
+                "Save & Quit",
+                on_click=lambda: _save_and_quit(session_maker, dialog),
+            )
+    dialog.open()
+
+
+def _traffic_light(color: str, tooltip: str, on_click) -> None:
+    """
+    Draw one macOS-style traffic-light title bar button
+    """
+    ui.element("div").classes(
+        f"w-3 h-3 rounded-full cursor-pointer {color}"
+    ).on("click", on_click).tooltip(tooltip)
+
+
+def build_title_bar(session_maker, title: str) -> None:
+    """
+    Draw a custom title bar mimicking macOS, since the window is frameless and this is the
+    only way to close/minimize/maximize it. The close (red) button runs the unsaved-changes
+    check before quitting; the title area is a pywebview drag region so the window can still
+    be moved by dragging it, like a normal title bar
+    """
+    is_maximized = {"value": False}
+
+    def toggle_maximized() -> None:
+        if is_maximized["value"]:
+            app.native.main_window.restore()
+        else:
+            app.native.main_window.maximize()
+        is_maximized["value"] = not is_maximized["value"]
+
+    # The page content has a 1rem padding on all sides; cancel it on the top/left/right here
+    # so the bar spans true edge-to-edge, like a native title bar. 'self-start' opts this row
+    # out of the parent column's own centering, which would otherwise re-center this
+    # wider-than-container, negative-margined box and throw the math off
+    with ui.row().classes(
+        "w-[calc(100%+2rem)] -ml-4 -mt-4 self-start items-center h-8 bg-white "
+        "border-b border-gray-300 flex-nowrap"
+    ):
+        with ui.row().classes("items-center gap-2 pl-3 w-20"):
+            _traffic_light(
+                "bg-[#ff5f57]", "Close", lambda: _confirm_quit(session_maker)
+            )
+            _traffic_light(
+                "bg-[#febc2e]",
+                "Minimize",
+                lambda: app.native.main_window.minimize(),
+            )
+            _traffic_light("bg-[#28c840]", "Maximize", toggle_maximized)
+        with ui.row().classes(
+            "flex-grow items-center justify-center pywebview-drag-region"
+        ):
+            ui.label(title).classes("text-sm font-medium text-gray-600 select-none")
+        ui.element("div").classes("w-20")

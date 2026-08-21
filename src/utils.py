@@ -3,6 +3,7 @@ Utility function for the main ui
 """
 
 import sqlite3
+from datetime import datetime
 from typing import Sequence
 
 from nicegui import app, ui
@@ -11,6 +12,27 @@ from sqlmodel import create_engine, select
 from webview import FileDialog
 
 from src.data import ArchetypeData, Event, Game, Match, ResultData
+
+
+def mark_dirty() -> None:
+    """
+    Flag the current client's session as having unsaved changes
+    """
+    app.storage.client["dirty"] = True
+
+
+def is_dirty() -> bool:
+    """
+    Check whether the current client's session has unsaved changes
+    """
+    return app.storage.client.get("dirty", False)
+
+
+def clear_dirty() -> None:
+    """
+    Flag the current client's session as having no unsaved changes (e.g. after a save/load)
+    """
+    app.storage.client["dirty"] = False
 
 
 def toggle_emoji(button1, button2) -> None:
@@ -144,6 +166,35 @@ def set_event_active(session_maker, event_id: int, active: bool) -> None:
         session.commit()
 
 
+def touch_event_updated_at(session, event_id: int) -> None:
+    """
+    Bump an event's updated_at to now, within an already-open session. Used to track which
+    event was most recently edited (e.g. by recording a match against it)
+    """
+    event = session.get(Event, event_id)
+    event.updated_at = datetime.now()
+    session.add(event)
+
+
+def deactivate_stale_events(session_maker) -> None:
+    """
+    Among the currently active events, keep only the most recently edited one active and
+    deactivate the rest. Intended to be called right before saving, so the saved DB reflects
+    a single "current" active event
+    """
+    with session_maker() as session:
+        statement = (
+            select(Event)
+            .where(Event.active.is_(True))
+            .order_by(Event.updated_at.desc())
+        )
+        active_events = session.execute(statement).scalars().all()
+        for event in active_events[1:]:
+            event.active = False
+            session.add(event)
+        session.commit()
+
+
 def get_archetypes(session_maker) -> Sequence[str]:
     """
     Query the DB for all the archetypes for which a match was recorded
@@ -209,9 +260,10 @@ def get_archetype_results(session_maker, archetype) -> ArchetypeData:
     )
 
 
-async def save_db_file(engine):
+async def save_db_file(session_maker, *refreshables):
     """
-    Save the current DB to file
+    Deactivate stale active events, then save the current DB to file and refresh the given
+    refreshable elements (e.g. generate_event_list)
     """
     if app.native.main_window:
         file_path = await app.native.main_window.create_file_dialog(
@@ -224,13 +276,21 @@ async def save_db_file(engine):
                 file_path[0] if isinstance(file_path, (list, tuple)) else file_path
             )
 
-            # Create a new connection to the destination and use backup to save
+            deactivate_stale_events(session_maker)
+
+            # Create a new connection to the destination and use backup to save. The engine is
+            # read from the session_maker (rather than passed in separately) so this always
+            # saves whatever DB is currently bound, even after a Load rebinds it
+            engine = session_maker.kw["bind"]
             raw_con = engine.raw_connection()
             dest_con = sqlite3.connect(final_path)
             with dest_con:
                 raw_con.connection.backup(dest_con)
             dest_con.close()
 
+            clear_dirty()
+            for refreshable in refreshables:
+                refreshable.refresh()
             ui.notify(f"Saved to {final_path}")
         else:
             # We shouldn't ever get here
@@ -254,6 +314,7 @@ async def load_db_file(session, *refreshables):
             engine = create_engine(f"sqlite:///{file_path[0]}")
             Event.metadata.create_all(engine)
             session.configure(bind=engine)
+            clear_dirty()
             for refreshable in refreshables:
                 refreshable.refresh()
             ui.notify(f"Loaded from {file_path[0]}")

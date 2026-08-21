@@ -14,6 +14,7 @@ from src.data import Event
 from src.ui_utils import (
     NewEventDialog,
     NewMatchDialog,
+    build_title_bar,
     generate_event_list,
     wr_table,
 )
@@ -67,11 +68,12 @@ def main_page(client: Client):
 """)
 
     # Setup the main UI elements, buttons and table
-    with ui.column().classes("w-full items-center"):
+    with ui.column().classes("w-full items-center gap-0"):
+        build_title_bar(session_maker, "")
         with (
             ui.splitter(value=10)
             .props("horizontal")
-            .classes("w-full h-screen") as splitter
+            .classes("w-full h-[calc(100vh-2rem)]") as splitter
         ):
 
             with splitter.before:
@@ -110,7 +112,9 @@ def main_page(client: Client):
                                 ui.button(
                                     "Save",
                                     icon="save",
-                                    on_click=lambda: save_db_file(engine),
+                                    on_click=lambda: save_db_file(
+                                        session_maker, generate_event_list
+                                    ),
                                 )
                                 ui.space()
                                 ui.button(
@@ -134,7 +138,9 @@ def main_page(client: Client):
                                 ui.button(
                                     "Save",
                                     icon="save",
-                                    on_click=lambda: save_db_file(engine),
+                                    on_click=lambda: save_db_file(
+                                        session_maker, generate_event_list
+                                    ),
                                 )
                                 ui.space()
                                 ui.button(
@@ -147,4 +153,4 @@ def main_page(client: Client):
         ui.label("© 2026 Vittorio Perera").classes("text-xs")
 
 
-ui.run(title="Win Rate Tracker", native=True)
+ui.run(title="", native=True, frameless=True)

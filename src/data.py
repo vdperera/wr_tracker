@@ -20,6 +20,7 @@ class Event(SQLModel, table=True):
     event_type: str  # Use your Enum here
     active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
     matches: List["Match"] = Relationship(back_populates="event")
 
 
