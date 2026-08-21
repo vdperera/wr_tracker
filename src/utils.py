@@ -3,6 +3,7 @@ Utility function for the main ui
 """
 
 import sqlite3
+from datetime import datetime
 from typing import Sequence
 
 from nicegui import app, ui
@@ -11,6 +12,27 @@ from sqlmodel import create_engine, select
 from webview import FileDialog
 
 from src.data import ArchetypeData, Event, Game, Match, ResultData
+
+
+def mark_dirty() -> None:
+    """
+    Flag the current client's session as having unsaved changes
+    """
+    app.storage.client["dirty"] = True
+
+
+def is_dirty() -> bool:
+    """
+    Check whether the current client's session has unsaved changes
+    """
+    return app.storage.client.get("dirty", False)
+
+
+def clear_dirty() -> None:
+    """
+    Flag the current client's session as having no unsaved changes (e.g. after a save/load)
+    """
+    app.storage.client["dirty"] = False
 
 
 def toggle_emoji(button1, button2) -> None:
@@ -56,6 +78,127 @@ def get_wins(matches: Sequence[Match]) -> int:
     """
 
     return len([m for m in matches if is_match_won(m)])
+
+
+def get_match_result(match: Match) -> str:
+    """
+    Classify a Match as "win", "loss" or "draw" based on its games' results
+    """
+    if match.is_match_loss:
+        return "loss"
+
+    total = sum(1 if game.win else -1 for game in match.games)
+    if total > 0:
+        return "win"
+    if total < 0:
+        return "loss"
+    return "draw"
+
+
+def get_event_score(matches: Sequence[Match]) -> tuple[int, int, int]:
+    """
+    Return the (wins, losses, draws) record for a sequence of Matches
+    """
+    results = [get_match_result(match) for match in matches]
+    return (
+        results.count("win"),
+        results.count("loss"),
+        results.count("draw"),
+    )
+
+
+def get_event_types(session_maker) -> Sequence[str]:
+    """
+    Query the DB for all the event types for which an event was recorded
+    """
+    with session_maker() as session:
+        statement = select(Event.event_type).distinct()
+        autocomplete_options = session.execute(statement).scalars().all()
+    return autocomplete_options
+
+
+def get_events(session_maker) -> Sequence[Event]:
+    """
+    Query the DB for all the recorded events, ordered from most to least recently created
+    """
+    with session_maker() as session:
+        statement = select(Event).order_by(
+            Event.created_at.desc()  # type: ignore # pylint: disable=no-member
+        )
+        events = session.execute(statement).scalars().all()
+    return events
+
+
+def get_active_events(session_maker) -> Sequence[Event]:
+    """
+    Query the DB for all active events, ordered from most to least recently created
+    """
+    with session_maker() as session:
+        statement = (
+            select(Event)
+            .where(Event.active.is_(True))  # type: ignore # pylint: disable=no-member
+            .order_by(
+                Event.created_at.desc()  # type: ignore # pylint: disable=no-member
+            )
+        )
+        events = session.execute(statement).scalars().all()
+    return events
+
+
+def get_matches_for_event(session_maker, event_id: int) -> Sequence[Match]:
+    """
+    Query the DB for all the matches (with their games) recorded for a given event
+    """
+    with session_maker() as session:
+        statement = (
+            select(Match)
+            .where(Match.event_id == event_id)
+            .options(selectinload(Match.games))  # type: ignore
+        )
+        matches = session.execute(statement).unique().scalars().all()
+    return matches
+
+
+def set_event_active(session_maker, event_id: int, active: bool) -> None:
+    """
+    Update the active flag for a given event
+    """
+    with session_maker() as session:
+        event = session.get(Event, event_id)
+        event.active = active
+        session.add(event)
+        session.commit()
+
+
+def touch_event_updated_at(session, event_id: int) -> None:
+    """
+    Bump an event's updated_at to now, within an already-open session. Used to track which
+    event was most recently edited (e.g. by recording a match against it)
+    """
+    event = session.get(Event, event_id)
+    event.updated_at = datetime.now()
+    session.add(event)
+
+
+def deactivate_stale_events(session_maker) -> None:
+    """
+    Among the currently active events, keep only the most recently edited one active and
+    deactivate the rest. Intended to be called right before saving, so the saved DB reflects
+    a single "current" active event
+    """
+    with session_maker() as session:
+        statement = (
+            select(Event)
+            .where(Event.active.is_(True))  # type: ignore # pylint: disable=no-member
+            .order_by(
+                Event.updated_at.desc()  # type: ignore # pylint: disable=no-member
+            )
+        )
+        active_events = session.execute(statement).scalars().all()
+        for event in active_events[1:]:
+            event.active = False
+            session.add(event)
+        session.commit()
 
 
 def get_archetypes(session_maker) -> Sequence[str]:
@@ -123,9 +266,10 @@ def get_archetype_results(session_maker, archetype) -> ArchetypeData:
     )
 
 
-async def save_db_file(engine):
+async def save_db_file(session_maker, *refreshables):
     """
-    Save the current DB to file
+    Deactivate stale active events, then save the current DB to file and refresh the given
+    refreshable elements (e.g. generate_event_list)
     """
     if app.native.main_window:
         file_path = await app.native.main_window.create_file_dialog(
@@ -138,22 +282,31 @@ async def save_db_file(engine):
                 file_path[0] if isinstance(file_path, (list, tuple)) else file_path
             )
 
-            # Create a new connection to the destination and use backup to save
+            deactivate_stale_events(session_maker)
+
+            # Create a new connection to the destination and use backup to save. The engine is
+            # read from the session_maker (rather than passed in separately) so this always
+            # saves whatever DB is currently bound, even after a Load rebinds it
+            engine = session_maker.kw["bind"]
             raw_con = engine.raw_connection()
             dest_con = sqlite3.connect(final_path)
             with dest_con:
                 raw_con.connection.backup(dest_con)
             dest_con.close()
 
+            clear_dirty()
+            for refreshable in refreshables:
+                refreshable.refresh()
             ui.notify(f"Saved to {final_path}")
         else:
             # We shouldn't ever get here
             raise ValueError("No file path")
 
 
-async def load_db_file(session, wr_table):
+async def load_db_file(session, *refreshables):
     """
-    Load an existing db and refresh the table
+    Load an existing db and refresh the given refreshable elements (e.g. wr_table,
+    generate_event_list)
     """
     if app.native.main_window:
         file_path = await app.native.main_window.create_file_dialog(
@@ -167,6 +320,8 @@ async def load_db_file(session, wr_table):
             engine = create_engine(f"sqlite:///{file_path[0]}")
             Event.metadata.create_all(engine)
             session.configure(bind=engine)
-            wr_table.refresh()
+            clear_dirty()
+            for refreshable in refreshables:
+                refreshable.refresh()
             ui.notify(f"Loaded from {file_path[0]}")
     return
