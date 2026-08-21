@@ -122,7 +122,7 @@ def get_events(session_maker) -> Sequence[Event]:
     Query the DB for all the recorded events, ordered from most to least recently created
     """
     with session_maker() as session:
-        statement = select(Event).order_by(Event.created_at.desc())
+        statement = select(Event).order_by(Event.created_at.desc())  # type: ignore
         events = session.execute(statement).scalars().all()
     return events
 
@@ -134,8 +134,8 @@ def get_active_events(session_maker) -> Sequence[Event]:
     with session_maker() as session:
         statement = (
             select(Event)
-            .where(Event.active.is_(True))
-            .order_by(Event.created_at.desc())
+            .where(Event.active.is_(True))  # type: ignore
+            .order_by(Event.created_at.desc())  # type: ignore
         )
         events = session.execute(statement).scalars().all()
     return events
@@ -149,7 +149,7 @@ def get_matches_for_event(session_maker, event_id: int) -> Sequence[Match]:
         statement = (
             select(Match)
             .where(Match.event_id == event_id)
-            .options(selectinload(Match.games))
+            .options(selectinload(Match.games))  # type: ignore
         )
         matches = session.execute(statement).unique().scalars().all()
     return matches
@@ -185,8 +185,8 @@ def deactivate_stale_events(session_maker) -> None:
     with session_maker() as session:
         statement = (
             select(Event)
-            .where(Event.active.is_(True))
-            .order_by(Event.updated_at.desc())
+            .where(Event.active.is_(True))  # type: ignore
+            .order_by(Event.updated_at.desc())  # type: ignore
         )
         active_events = session.execute(statement).scalars().all()
         for event in active_events[1:]:

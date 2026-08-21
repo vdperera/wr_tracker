@@ -495,6 +495,7 @@ def _toggle_event_active(session_maker, event: Event) -> None:
     """
     Flip an event's active flag in the DB and refresh the event list
     """
+    assert event.id is not None  # events read back from the DB always have an id
     set_event_active(session_maker, event.id, not event.active)
     mark_dirty()
     generate_event_list.refresh()
@@ -625,11 +626,19 @@ def build_title_bar(session_maker, title: str) -> None:
     is_maximized = {"value": False}
 
     def toggle_maximized() -> None:
+        window = app.native.main_window
+        if window is None:
+            return
         if is_maximized["value"]:
-            app.native.main_window.restore()
+            window.restore()
         else:
-            app.native.main_window.maximize()
+            window.maximize()
         is_maximized["value"] = not is_maximized["value"]
+
+    def minimize_window() -> None:
+        window = app.native.main_window
+        if window is not None:
+            window.minimize()
 
     # The page content has a 1rem padding on all sides; cancel it on the top/left/right here
     # so the bar spans true edge-to-edge, like a native title bar. 'self-start' opts this row
@@ -643,11 +652,7 @@ def build_title_bar(session_maker, title: str) -> None:
             _traffic_light(
                 "bg-[#ff5f57]", "Close", lambda: _confirm_quit(session_maker)
             )
-            _traffic_light(
-                "bg-[#febc2e]",
-                "Minimize",
-                lambda: app.native.main_window.minimize(),
-            )
+            _traffic_light("bg-[#febc2e]", "Minimize", minimize_window)
             _traffic_light("bg-[#28c840]", "Maximize", toggle_maximized)
         with ui.row().classes(
             "flex-grow items-center justify-center pywebview-drag-region"
