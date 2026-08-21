@@ -56,6 +56,13 @@ def main_page(client: Client):
     .event-select .q-field__marginal {
         transform: translateY(8px);
     }
+    /* Events with no matches have nothing to expand into: block the click (rather than
+       Quasar's 'disable' prop, which would also dim the row's text) so it can't toggle open
+       on an empty body */
+    .event-expansion-empty .q-item {
+        pointer-events: none;
+        cursor: default;
+    }
 </style>
 """)
 

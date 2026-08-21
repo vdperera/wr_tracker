@@ -13,8 +13,10 @@ from src.utils import (
     get_active_events,
     get_archetype_results,
     get_archetypes,
+    get_event_score,
     get_event_types,
     get_events,
+    get_matches_for_event,
     set_event_active,
     toggle_emoji,
 )
@@ -224,6 +226,7 @@ class NewMatchDialog(ui.dialog):  # pylint: disable=too-many-instance-attributes
             session.commit()
 
         wr_table.refresh()
+        generate_event_list.refresh()
 
         self.reset_dialog()
         self.close()
@@ -499,36 +502,62 @@ def _event_lock_icon(session_maker, event: Event) -> None:
     ).tooltip("Active - click to close" if event.active else "Closed")
 
 
+def _match_sub_row(match: Match) -> None:
+    """
+    Draw one sub-row for a match: its archetype and its games' results as a sequence of
+    smileys, the same way results are entered in the New Match dialog
+    """
+    with ui.row().classes(
+        "w-full items-center justify-between p-2 border-b border-gray-100 last:border-none"
+    ):
+        ui.label(match.archetype).classes("text-sm text-gray-600")
+        with ui.row().classes("gap-1"):
+            for game in match.games:
+                ui.label("🙂" if game.win else "🙁").classes("text-xl")
+
+
 @ui.refreshable
 def generate_event_list(session_maker):
-    """Generates a row, with an empty sub-row section, for each Event in the database."""
+    """Generates a row, with a sub-row for each of its matches, for each Event in the database."""
     with ui.column().classes("w-full gap-1"):
         for event in get_events(session_maker):
-            sub_rows: list[str] = []
+            matches = get_matches_for_event(session_maker, event.id)
 
-            if sub_rows:
-                # ui.expansion acts as the clickable parent row
-                # 'classes' strips default styles to make it look like a clean row
-                with ui.row().classes(
-                    "w-full items-center border-b border-gray-200"
-                ):
+            # Always use the same expansion-based header (disabled when there are no matches
+            # to show) so the lock icon lines up identically, and at the same height, whether
+            # or not a given event's row is expandable
+            with ui.row().classes(
+                "w-full items-start border-b border-gray-200"
+            ):
+                # Align the lock icon to the top (items-start) so it stays put when the
+                # expansion grows. Quasar's expansion header is a QItem with a fixed 48px
+                # (h-12) min-height regardless of content, so centering the icon within a
+                # same-height box lines it up with the header text without depending on any
+                # measured/guessed offset
+                with ui.row().classes("h-12 items-center"):
                     _event_lock_icon(session_maker, event)
-                    with ui.expansion(text=event.name).classes(
-                        "flex-grow text-lg font-medium"
-                    ):
-
-                        # Container for sub-rows with left padding (pl-8) for indentation
-                        with ui.column().classes("w-full pl-8 pb-2 gap-1 bg-gray-50"):
-                            for sub_row in sub_rows:
-                                with ui.row().classes(
-                                    "w-full p-2 border-b border-gray-100 last:border-none"
-                                ):
-                                    ui.label(sub_row).classes("text-sm text-gray-600")
-            else:
-                # No sub-rows yet, use a plain (non-toggleable) row so there is nothing to
-                # expand/collapse and the row doesn't shift on click
-                with ui.row().classes(
-                    "w-full items-center border-b border-gray-200 text-lg font-medium p-3"
-                ):
-                    _event_lock_icon(session_maker, event)
-                    ui.label(event.name)
+                text_color = "text-gray-300" if not event.active else ""
+                expansion = ui.expansion(text=event.name).classes(
+                    f"flex-grow text-lg font-medium {text_color}"
+                )
+                if not matches:
+                    # Nothing to expand into: hide the arrow (keeping its layout space so the
+                    # header still lines up with expandable rows) and block the click so it
+                    # can't toggle open on an empty body. Quasar's own 'disable' prop would
+                    # also dim the row's text, which we don't want, so block clicks via our
+                    # own CSS instead (see the 'event-expansion-empty' rule in main_ui.py)
+                    expansion.props('expand-icon-class="invisible"').classes(
+                        "event-expansion-empty"
+                    )
+                # Override the header slot so the score can be right-aligned next to the name
+                # (font size/weight/color are inherited from the expansion's own classes above)
+                with expansion.add_slot("header"):
+                    with ui.row().classes("w-full items-center justify-between"):
+                        ui.label(event.name)
+                        wins, losses, draws = get_event_score(matches)
+                        ui.label(f"{wins}-{losses}-{draws}")
+                with expansion:
+                    # Container for sub-rows with left padding (pl-8) for indentation
+                    with ui.column().classes("w-full pl-8 pb-2 gap-1 bg-gray-50"):
+                        for match in matches:
+                            _match_sub_row(match)

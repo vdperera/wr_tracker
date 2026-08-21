@@ -58,6 +58,33 @@ def get_wins(matches: Sequence[Match]) -> int:
     return len([m for m in matches if is_match_won(m)])
 
 
+def get_match_result(match: Match) -> str:
+    """
+    Classify a Match as "win", "loss" or "draw" based on its games' results
+    """
+    if match.is_match_loss:
+        return "loss"
+
+    total = sum(1 if game.win else -1 for game in match.games)
+    if total > 0:
+        return "win"
+    if total < 0:
+        return "loss"
+    return "draw"
+
+
+def get_event_score(matches: Sequence[Match]) -> tuple[int, int, int]:
+    """
+    Return the (wins, losses, draws) record for a sequence of Matches
+    """
+    results = [get_match_result(match) for match in matches]
+    return (
+        results.count("win"),
+        results.count("loss"),
+        results.count("draw"),
+    )
+
+
 def get_event_types(session_maker) -> Sequence[str]:
     """
     Query the DB for all the event types for which an event was recorded
@@ -70,10 +97,10 @@ def get_event_types(session_maker) -> Sequence[str]:
 
 def get_events(session_maker) -> Sequence[Event]:
     """
-    Query the DB for all the recorded events
+    Query the DB for all the recorded events, ordered from most to least recently created
     """
     with session_maker() as session:
-        statement = select(Event)
+        statement = select(Event).order_by(Event.created_at.desc())
         events = session.execute(statement).scalars().all()
     return events
 
@@ -90,6 +117,20 @@ def get_active_events(session_maker) -> Sequence[Event]:
         )
         events = session.execute(statement).scalars().all()
     return events
+
+
+def get_matches_for_event(session_maker, event_id: int) -> Sequence[Match]:
+    """
+    Query the DB for all the matches (with their games) recorded for a given event
+    """
+    with session_maker() as session:
+        statement = (
+            select(Match)
+            .where(Match.event_id == event_id)
+            .options(selectinload(Match.games))
+        )
+        matches = session.execute(statement).unique().scalars().all()
+    return matches
 
 
 def set_event_active(session_maker, event_id: int, active: bool) -> None:
